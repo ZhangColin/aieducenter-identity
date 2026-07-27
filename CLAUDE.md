@@ -26,3 +26,17 @@ Gateway 网关服务，基于 cartisan-boot 框架。
 ## 开发流程
 
 严格按 Superpowers 技能流程执行：brainstorming → writing-plans → TDD → verification
+
+## Agent skills
+
+### Issue tracker
+
+问题/工单记录为 GitHub Issues（使用 `gh` CLI）。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用默认的五个 triage 标签（needs-triage / needs-info / ready-for-agent / ready-for-human / wontfix）。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
