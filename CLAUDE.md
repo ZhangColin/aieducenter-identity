@@ -36,3 +36,18 @@ Gateway 网关服务，基于 cartisan-boot 框架。
 ### Domain docs
 
 single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
+
+
+## 平台架构上下文
+本服务（identity）是平台终端用户身份基座 / 集中式 IdP（基础能力层），被所有业务应用消费。完整架构与决策在兄弟仓库 ../aieducenter-architecture/（起步包 docs/starters/identity.md）。
+
+稳定不变式（务必遵守）：
+- Operator 不在本服务（运营人员认证+角色/部门/岗位在统一后台 admin）——别把运营相关往这塞。
+- SSO 走 OIDC（/authorize /token /userinfo /jwks /discovery）；token 只存服务端，浏览器不接触 token。
+- 应用不持有用户凭据；社交登录（微信/Google/Apple）归本域统一接入、归一到中央 Account。
+- tenantId 全程可空（C 端无感，无租户按 userId 隔离）；写侧需自带租户过滤（cartisan-boot 写侧无自动过滤）。
+- 鉴权机器用 cartisan-security（共享库、不建用户表）——本服务自带 account 凭据表、实现 authenticate()/StpInterface；只 Account 一种身份，Sa-Token 默认 loginType 即可。
+- 管组织治理角色（owner/admin/member）；应用内业务角色归应用自管，不在本服务。
+
+深度（SSO 时序、为什么 OIDC/BFF、术语、决策记录）：读架构仓库 integration-flows.md §1、architecture.md §6.1、CONTEXT.md、map.md。
+本项目自己的设计演进 → 本项目的 CONTEXT.md + docs/adr/。
