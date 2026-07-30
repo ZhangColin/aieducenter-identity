@@ -20,7 +20,36 @@
         <maven.compiler.target>21</maven.compiler.target>
         <postgresql.version>42.7.4</postgresql.version>
         <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
+        <!-- 覆盖 spring-boot 3.4 BOM 自带的 testcontainers 1.20.4：1.20.x shaded 的 docker-java
+             与 Docker Engine 29（MinAPIVersion=1.44）不兼容。升到 1.21.4（最新 1.x）。
+             子 POM dependencyManagement 最近原则，优先于父 BOM。 -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>jdbc</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>database-commons</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Spring Boot Starters -->
@@ -131,6 +160,18 @@
             <groupId>com.cartisan</groupId>
             <artifactId>cartisan-test</artifactId>
             <version>0.1.0-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Testcontainers（真 Postgres + Redis 集成测试；版本由 dependencyManagement 钉到 1.21.4） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

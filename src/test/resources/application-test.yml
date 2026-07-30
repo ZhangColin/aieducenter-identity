@@ -1,0 +1,10 @@
+# 测试 profile：datasource / Redis 连接信息由 @ServiceConnection 自动注入（见 TestContainersConfig）。
+spring:
+  jpa:
+    show-sql: false
+  # 排除 Druid 自动配置：Druid 直接读 spring.datasource.url，绕过 Spring Boot 的 ConnectionDetails 机制，
+  # 导致 @ServiceConnection 对 Postgres 容器失效（Failed to determine suitable jdbc url）。
+  # 测试改用 HikariCP（Spring Boot 默认，认 ConnectionDetails）。生产仍用 Druid（连接池/监控）。
+  autoconfigure:
+    exclude:
+      - com.alibaba.druid.spring.boot3.autoconfigure.DruidDataSourceAutoConfigure

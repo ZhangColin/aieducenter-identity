@@ -33,6 +33,10 @@ cartisan:
         - "/health"
         - "/swagger-ui/**"
         - "/api-docs/**"
+        # verification 上下文公开端点（登录前下发/校验验证码，无需鉴权）
+        - "/api/captcha"
+        - "/api/account/verification-code/**"
+        - "/api/account/verify-code"
   openapi:
     self:
       app-id: ${OPENAPI_APP_ID:}
