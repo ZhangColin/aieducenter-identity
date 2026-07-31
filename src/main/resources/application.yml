@@ -39,6 +39,10 @@ cartisan:
         - "/api/account/verify-code"
         # refresh 端点凭 refresh_token 本身鉴权，无需登录态（issue #13）
         - "/api/account/refresh"
+        # OIDC/SSO 协议端点（issue #15）：自身走协议鉴权（code/client_secret）或公开，不经 sa-token
+        - "/authorize"
+        - "/token"
+        - "/api/auth/**"
   openapi:
     self:
       app-id: ${OPENAPI_APP_ID:}
@@ -66,6 +70,22 @@ identity:
       key-id: identity-rs256-v1
       audiences:
         - aieducenter-identity
+  # SSO 配置（ADR-0004 / issue #15）——一套 SSO 会话（cookie+Redis+双超时）+ 授权码 + client stub
+  sso:
+    session-idle-seconds: 2592000      # 闲置超时 30 天（Redis key TTL 滑动）
+    session-absolute-seconds: 7776000   # 绝对超时 90 天
+    code-ttl-seconds: 60                # 授权码 60s 一次性
+    cookie-name: sso_session
+    cookie-secure: true
+    login-page-url: https://login.company.com/login
+    protected-paths:
+      - /api/account/me
+      - /api/account/profile
+    # client 查询 stub（dev/测试便利；真 app-registry 接入在 #6）
+    stub-client-id: demo-client
+    stub-client-secret: demo-secret-please-change
+    stub-redirect-uris:
+      - https://demo.localhost/auth/callback
 
 management:
   endpoints:

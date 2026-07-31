@@ -149,6 +149,18 @@ public class Account extends AuditableSoftDeletable implements AggregateRoot<Acc
         this.lastLoginAt = LocalDateTime.now();
     }
 
+    /**
+     * 显示标签：昵称（非空）优先，其次邮箱，其次手机号。供 SSO 会话显示名 / token 写入。
+     *
+     * @param nickname 个人资料昵称（可空）
+     */
+    public String displayLabel(String nickname) {
+        if (nickname != null && !nickname.isBlank()) {
+            return nickname;
+        }
+        return email != null ? email : phone;
+    }
+
     // ========== 密码管理 ==========
 
     /**

@@ -1,33 +1,56 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.transaction.annotation.Transactional;
 
+import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
+import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
+import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
+import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.cartisan.test.base.ApiTestAssertions;
 
+import jakarta.servlet.http.Cookie;
+
 /**
- * 个人资料 HTTP 黑盒集成测试——查看 / 编辑（需登录态）。
+ * 个人资料 HTTP 黑盒集成测试——查看 / 编辑（凭 SSO cookie，issue #15）。
  */
-@Transactional
+@org.springframework.transaction.annotation.Transactional
 class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
 
     private static final String PASSWORD = "Password123";
 
+    @Autowired
+    private AccountRepository accountRepository;
+
+    @Autowired
+    private SsoSessionRepository ssoSessionRepository;
+
+    @Autowired
+    private SsoProperties ssoProperties;
+
+    /** 注册手机号账号 → 建 SSO 会话 → 返回装入请求用的 SSO cookie。 */
+    private Cookie ssoLoginCookie(String phone) throws Exception {
+        registerPhoneAccount(phone, PASSWORD);
+        Long userId = accountRepository.findByPhone(phone).orElseThrow().getId();
+        SsoSession session = ssoSessionRepository.create(userId, phone);
+        Cookie cookie = new Cookie(ssoProperties.getCookieName(), session.sessionId());
+        cookie.setSecure(true);
+        cookie.setHttpOnly(true);
+        return cookie;
+    }
+
     @Test
     void given_logged_in_when_get_profile_then_returns_current_user() throws Exception {
         String phone = "13600100001";
-        registerPhoneAccount(phone, PASSWORD);
-        String token = loginAndExtractToken(phone);
+        Cookie sso = ssoLoginCookie(phone);
 
-        mvc.perform(get("/api/account/profile").header("Authorization", token))
+        mvc.perform(get("/api/account/profile").cookie(sso))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.userId").isString()) // TSID Long 序列化为字符串
             .andExpect(jsonPath("$.data.phone").value(phone))
@@ -37,16 +60,15 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
     @Test
     void given_logged_in_when_update_nickname_then_get_reflects_change() throws Exception {
         String phone = "13600100002";
-        registerPhoneAccount(phone, PASSWORD);
-        String token = loginAndExtractToken(phone);
+        Cookie sso = ssoLoginCookie(phone);
 
         mvc.perform(put("/api/account/profile")
-                .header("Authorization", token)
+                .cookie(sso)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"nickname\":\"Colin\",\"avatar\":\"https://cdn/avatar.png\"}"))
             .andExpect(ApiTestAssertions.assertOk());
 
-        mvc.perform(get("/api/account/profile").header("Authorization", token))
+        mvc.perform(get("/api/account/profile").cookie(sso))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.nickname").value("Colin"))
             .andExpect(jsonPath("$.data.avatar").value("https://cdn/avatar.png"));
@@ -58,15 +80,14 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
             .andExpect(status().isUnauthorized());
     }
 
-    // ── /me（issue #12）──────────────────────────────────────────────────────
+    // ── /me（issue #12 / #15 凭 SSO cookie）──────────────────────────────────
 
     @Test
     void given_logged_in_when_get_me_then_returns_current_user() throws Exception {
         String phone = "13600100003";
-        registerPhoneAccount(phone, PASSWORD);
-        String token = loginAndExtractToken(phone);
+        Cookie sso = ssoLoginCookie(phone);
 
-        mvc.perform(get("/api/account/me").header("Authorization", token))
+        mvc.perform(get("/api/account/me").cookie(sso))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.userId").isString())
             .andExpect(jsonPath("$.data.phone").value(phone));
@@ -84,14 +105,5 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"nickname\":\"X\"}"))
             .andExpect(status().isUnauthorized());
-    }
-
-    private String loginAndExtractToken(String phone) throws Exception {
-        MvcResult result = mvc.perform(post("/api/account/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(loginPasswordBody(phone, PASSWORD, getCaptcha())))
-            .andExpect(ApiTestAssertions.assertOk())
-            .andReturn();
-        return extractAccessToken(result);
     }
 }

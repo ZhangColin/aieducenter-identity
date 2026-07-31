@@ -1,0 +1,149 @@
+package com.aieducenter.aieducenteridentity.sso.application;
+
+import org.springframework.stereotype.Service;
+
+import com.aieducenter.aieducenteridentity.account.application.TokenIssuerAppService;
+import com.aieducenter.aieducenteridentity.account.application.dto.response.LoginResponse;
+import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
+import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
+import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
+import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
+import com.aieducenter.aieducenteridentity.sso.application.dto.TokenRequest;
+import com.aieducenter.aieducenteridentity.sso.application.dto.TokenResponse;
+import com.aieducenter.aieducenteridentity.sso.domain.client.ClientSecretVerifier;
+import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
+import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientRepository;
+import com.aieducenter.aieducenteridentity.sso.domain.code.AuthorizationCodeStore;
+import com.aieducenter.aieducenteridentity.sso.domain.code.IssuedAuthorizationCode;
+import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
+import com.cartisan.core.exception.DomainException;
+
+/**
+ * /token 端点应用服务（CONTEXT「token 归 /token」/ issue #15）。
+ *
+ * <p>authorization_code grant：验 client_secret → 一次性消费 code（验绑 client/redirect_uri）→ 签
+ * access/id/refresh（id 回带 nonce）。refresh_token grant：验 client → 消费 refresh 轮换 → 重新签发。
+ * token 三件套签发复用 {@link TokenIssuerAppService}（无 sa-token）。</p>
+ *
+ * @since 0.1.0
+ */
+@Service
+public class SsoTokenAppService {
+
+    private static final String GRANT_AUTHORIZATION_CODE = "authorization_code";
+    private static final String GRANT_REFRESH_TOKEN = "refresh_token";
+
+    private final SsoClientRepository clientRepository;
+    private final ClientSecretVerifier clientSecretVerifier;
+    private final AuthorizationCodeStore codeStore;
+    private final TokenIssuerAppService tokenIssuer;
+    private final AccountRepository accountRepository;
+    private final ProfileRepository profileRepository;
+
+    public SsoTokenAppService(SsoClientRepository clientRepository, ClientSecretVerifier clientSecretVerifier,
+            AuthorizationCodeStore codeStore, TokenIssuerAppService tokenIssuer, AccountRepository accountRepository,
+            ProfileRepository profileRepository) {
+        this.clientRepository = clientRepository;
+        this.clientSecretVerifier = clientSecretVerifier;
+        this.codeStore = codeStore;
+        this.tokenIssuer = tokenIssuer;
+        this.accountRepository = accountRepository;
+        this.profileRepository = profileRepository;
+    }
+
+    /**
+     * 处理 /token（code grant / refresh grant）。
+     *
+     * @throws OidcException invalid_client / unsupported_grant_type / unauthorized_client / invalid_grant / invalid_request
+     */
+    public TokenResponse token(TokenRequest request) {
+        SsoClient client = authenticateClient(request.clientId(), request.clientSecret());
+
+        if (GRANT_AUTHORIZATION_CODE.equals(request.grantType())) {
+            requireGrant(client, GRANT_AUTHORIZATION_CODE);
+            return handleCodeGrant(client, request);
+        }
+        if (GRANT_REFRESH_TOKEN.equals(request.grantType())) {
+            requireGrant(client, GRANT_REFRESH_TOKEN);
+            return handleRefreshGrant(request);
+        }
+        throw new OidcException(SsoError.UNSUPPORTED_GRANT_TYPE, "不支持的 grant_type: " + request.grantType());
+    }
+
+    private TokenResponse handleCodeGrant(SsoClient client, TokenRequest request) {
+        if (request.code() == null || request.code().isBlank()) {
+            throw new OidcException(SsoError.INVALID_REQUEST, "code 缺失");
+        }
+        IssuedAuthorizationCode payload = codeStore.consume(request.code())
+            .orElseThrow(() -> new OidcException(SsoError.INVALID_GRANT, "授权码无效或已使用"));
+        // 验绑：code 必须属于该 client、且 redirect_uri 与发码时一致（防 code 挪用）
+        if (!payload.clientId().equals(client.clientId())) {
+            throw new OidcException(SsoError.INVALID_GRANT, "授权码不属于该 client");
+        }
+        if (request.redirectUri() == null || !request.redirectUri().equals(payload.redirectUri())) {
+            throw new OidcException(SsoError.INVALID_GRANT, "redirect_uri 与授权时不一致");
+        }
+
+        Account account = loadAccount(payload.userId());
+        ensureUsable(account);
+        Profile profile = profileRepository.findById(payload.userId()).orElse(null);
+        LoginResponse issued = tokenIssuer.issue(account, profile, payload.nonce());
+        return toResponse(issued);
+    }
+
+    private TokenResponse handleRefreshGrant(TokenRequest request) {
+        if (request.refreshToken() == null || request.refreshToken().isBlank()) {
+            throw new OidcException(SsoError.INVALID_REQUEST, "refresh_token 缺失");
+        }
+        Long userId = tokenIssuer.consumeRefresh(request.refreshToken())
+            .orElseThrow(() -> new OidcException(SsoError.INVALID_GRANT, "refresh_token 无效或已使用"));
+        Account account = loadAccount(userId);
+        ensureUsable(account);
+        Profile profile = profileRepository.findById(userId).orElse(null);
+        LoginResponse issued = tokenIssuer.issue(account, profile, null);
+        return toResponse(issued);
+    }
+
+    /**
+     * 账号停用/锁定则拒发 token——OIDC 形态（invalid_grant），而非内部领域异常。
+     *
+     * <p>身份已由 code/refresh 证明；账号在签发与换 token 之间被封禁时，换 token 失败。</p>
+     */
+    private void ensureUsable(Account account) {
+        try {
+            account.ensureLoginable();
+        } catch (DomainException ex) {
+            throw new OidcException(SsoError.INVALID_GRANT, "账号已停用或锁定");
+        }
+    }
+
+    private SsoClient authenticateClient(String clientId, String clientSecret) {
+        if (clientId == null || clientId.isBlank()) {
+            throw new OidcException(SsoError.INVALID_CLIENT, "client_id 缺失");
+        }
+        SsoClient client = clientRepository.findByClientId(clientId)
+            .orElseThrow(() -> new OidcException(SsoError.INVALID_CLIENT, "client_id 无效或未注册"));
+        if (clientSecret == null || !clientSecretVerifier.matches(clientSecret, client.clientSecretHash())) {
+            throw new OidcException(SsoError.INVALID_CLIENT, "client 认证失败");
+        }
+        return client;
+    }
+
+    private void requireGrant(SsoClient client, String grantType) {
+        if (!client.supportsGrant(grantType)) {
+            throw new OidcException(SsoError.UNAUTHORIZED_CLIENT, "client 未授权该 grant_type");
+        }
+    }
+
+    private Account loadAccount(Long userId) {
+        return accountRepository.findById(userId)
+            .orElseThrow(() -> new OidcException(SsoError.INVALID_GRANT, "用户不存在"));
+    }
+
+    private static TokenResponse toResponse(LoginResponse issued) {
+        return new TokenResponse(
+            issued.accessToken(), issued.tokenType(), issued.expiresIn(),
+            issued.refreshToken(), issued.idToken());
+    }
+}

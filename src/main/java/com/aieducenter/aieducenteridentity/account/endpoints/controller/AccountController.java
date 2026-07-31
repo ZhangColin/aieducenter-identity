@@ -107,22 +107,19 @@ public class AccountController {
     }
 
     @GetMapping("/me")
-    @RequireAuth
-    @Operation(summary = "当前登录用户", description = "返回当前登录用户的 profile（供应用界面显示「我是谁」，issue #12）")
+    @Operation(summary = "当前登录用户", description = "返回当前登录用户的 profile（凭 SSO cookie，issue #15）")
     public ApiResponse<AccountProfileResponse> getCurrentUser() {
         return ApiResponse.ok(profileAppService.getCurrentProfile());
     }
 
     @GetMapping("/profile")
-    @RequireAuth
-    @Operation(summary = "查看个人资料", description = "返回当前登录用户的 profile")
+    @Operation(summary = "查看个人资料", description = "返回当前登录用户的 profile（凭 SSO cookie）")
     public ApiResponse<AccountProfileResponse> getProfile() {
         return ApiResponse.ok(profileAppService.getCurrentProfile());
     }
 
     @PutMapping("/profile")
-    @RequireAuth
-    @Operation(summary = "编辑个人资料", description = "更新当前登录用户的昵称/头像（仅非空字段）")
+    @Operation(summary = "编辑个人资料", description = "更新当前登录用户的昵称/头像（仅非空字段，凭 SSO cookie）")
     public ApiResponse<Void> updateProfile(@Valid @RequestBody UpdateProfileCommand command) {
         profileAppService.updateCurrentProfile(command);
         return ApiResponse.ok();

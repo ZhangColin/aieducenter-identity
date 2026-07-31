@@ -15,9 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
+import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
+import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
+import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.cartisan.test.base.ApiTestAssertions;
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.JWTClaimsSet;
+
+import jakarta.servlet.http.Cookie;
 
 /**
  * 登录 / 登出 HTTP 黑盒集成测试。
@@ -32,6 +37,12 @@ class AccountLoginIntegrationTest extends AccountIntegrationTestBase {
 
     @Autowired
     private AccountRepository accountRepository;
+
+    @Autowired
+    private SsoSessionRepository ssoSessionRepository;
+
+    @Autowired
+    private SsoProperties ssoProperties;
 
     // ── 密码登录 ──────────────────────────────────────────────────────────────
 
@@ -179,17 +190,18 @@ class AccountLoginIntegrationTest extends AccountIntegrationTestBase {
             .andExpect(status().isUnauthorized());
     }
 
-    // ── bug#1：登录后 SaSession 填充 → RequestContext.userId 可用 ────────────────
+    // ── issue #15：受保护接口凭 SSO cookie（SsoSessionFilter 填 RequestContext） ───
 
     @Test
-    void given_logged_in_when_access_profile_then_returns_current_user() throws Exception {
+    void given_sso_session_when_access_profile_then_returns_current_user() throws Exception {
         String phone = "13900100006";
         registerPhoneAccount(phone, PASSWORD);
-        String token = loginAndExtractToken(phone, PASSWORD);
+        Long userId = accountRepository.findByPhone(phone).orElseThrow().getId();
+        SsoSession session = ssoSessionRepository.create(userId, phone);
 
-        // 登录后带 token 访问受保护接口 → 200，返回当前登录用户资料
-        // （证明 SecurityFilter 从 SaSession 读出 userId 写入 RequestContext，bug#1 修复）
-        mvc.perform(get("/api/account/profile").header("Authorization", token))
+        // 凭 SSO cookie 访问受保护接口 → 200，返回当前登录用户资料
+        // （SsoSessionFilter 从 SSO cookie 读出 userId 写入 RequestContext，替代旧 SaSession 链路）
+        mvc.perform(get("/api/account/profile").cookie(new Cookie(ssoProperties.getCookieName(), session.sessionId())))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.phone").value(phone));
     }

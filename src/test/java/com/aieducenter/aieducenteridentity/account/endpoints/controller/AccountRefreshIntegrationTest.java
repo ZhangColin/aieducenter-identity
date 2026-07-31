@@ -1,7 +1,6 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -46,9 +45,8 @@ class AccountRefreshIntegrationTest extends AccountIntegrationTestBase {
         // 轮换：新 refresh ≠ 旧 refresh
         assertThat(newRefresh).isNotEqualTo(refresh);
 
-        // 新 access JWT 兼作 Sa-Token 会话 token → /profile 200
-        mvc.perform(get("/api/account/profile").header("Authorization", newAccess))
-            .andExpect(ApiTestAssertions.assertOk());
+        // 注：issue #15 起 /profile 改凭 SSO cookie（不再以 access JWT 兼 sa-token 会话 token 访问）；
+        // access JWT 仅作 OIDC 产物给消费方 BFF，故此处不再用它访问 /profile。
 
         // 新 refresh 可继续换新（链式轮换）
         mvc.perform(post("/api/account/refresh")

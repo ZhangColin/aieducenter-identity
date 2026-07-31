@@ -23,6 +23,7 @@ import java.util.List;
  * @param phoneNumberVerified   手机号是否已验证（可空）
  * @param nickname              昵称（可空）
  * @param picture               头像 URL（可空）
+ * @param nonce                 OIDC nonce（消费方在 /authorize 生成，id_token 回带防重放；可空——非授权码流不传）
  *
  * @since 0.1.0
  */
@@ -38,6 +39,7 @@ public record IdTokenClaims(
     String phoneNumber,
     Boolean phoneNumberVerified,
     String nickname,
-    String picture
+    String picture,
+    String nonce
 ) {
 }

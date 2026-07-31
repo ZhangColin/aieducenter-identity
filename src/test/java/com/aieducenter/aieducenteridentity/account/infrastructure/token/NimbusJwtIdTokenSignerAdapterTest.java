@@ -38,7 +38,7 @@ class NimbusJwtIdTokenSignerAdapterTest {
             "https://identity.test", "user-123", List.of("aieducenter-identity"), iat, exp, "jti-id",
             "user@test.com", true,
             "+8613800138000", true,
-            "阿福", "https://cdn/avatar.png");
+            "阿福", "https://cdn/avatar.png", "nonce-abc");
 
         String jwt = adapter.sign(claims);
 
@@ -56,6 +56,7 @@ class NimbusJwtIdTokenSignerAdapterTest {
         assertThat(c.getBooleanClaim("phone_number_verified")).isTrue();
         assertThat(c.getStringClaim("nickname")).isEqualTo("阿福");
         assertThat(c.getStringClaim("picture")).isEqualTo("https://cdn/avatar.png");
+        assertThat(c.getStringClaim("nonce")).isEqualTo("nonce-abc");
     }
 
     @Test
@@ -63,7 +64,7 @@ class NimbusJwtIdTokenSignerAdapterTest {
         IdTokenClaims claims = new IdTokenClaims(
             "https://identity.test", "user-123", List.of("aud"), Instant.now(),
             Instant.now().plusSeconds(60), "jti",
-            null, null, null, null, null, null);
+            null, null, null, null, null, null, null);
 
         JWTClaimsSet c = SignedJWT.parse(adapter.sign(claims)).getJWTClaimsSet();
 
@@ -71,6 +72,7 @@ class NimbusJwtIdTokenSignerAdapterTest {
         assertThat(c.getClaim("phone_number")).isNull();
         assertThat(c.getClaim("nickname")).isNull();
         assertThat(c.getClaim("picture")).isNull();
+        assertThat(c.getClaim("nonce")).isNull();
         // 标准声明仍在
         assertThat(c.getSubject()).isEqualTo("user-123");
     }

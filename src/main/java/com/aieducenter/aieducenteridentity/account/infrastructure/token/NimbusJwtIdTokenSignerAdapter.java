@@ -53,6 +53,9 @@ public class NimbusJwtIdTokenSignerAdapter implements IdTokenSigner {
         if (claims.picture() != null) {
             builder.claim("picture", claims.picture());
         }
+        if (claims.nonce() != null) {
+            builder.claim("nonce", claims.nonce());
+        }
         return support.sign(builder.build());
     }
 }

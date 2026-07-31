@@ -1,0 +1,132 @@
+package com.aieducenter.aieducenteridentity.sso.config;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+/**
+ * SSO 配置属性（{@code identity.sso.*}，ADR-0004 / issue #15）。
+ *
+ * <p>会话双超时（闲置/绝对）、授权码有效期、SSO cookie、登录页 URL、受 SSO 会话保护的路径。</p>
+ *
+ * @since 0.1.0
+ */
+@Component
+@ConfigurationProperties(prefix = "identity.sso")
+public class SsoProperties {
+
+    /** SSO 会话闲置超时（秒），Redis key TTL 滑动续期；默认 30 天。 */
+    private long sessionIdleSeconds = 2_592_000L;
+
+    /** SSO 会话绝对超时（秒），到期必失效；默认 90 天。 */
+    private long sessionAbsoluteSeconds = 7_776_000L;
+
+    /** 授权码有效期（秒），默认 60s（一次性）。 */
+    private long codeTtlSeconds = 60L;
+
+    /** SSO cookie 名。 */
+    private String cookieName = "sso_session";
+
+    /** SSO cookie 是否标记 Secure（生产必须 true；本地 .localhost 为 secure context 亦可 true）。 */
+    private boolean cookieSecure = true;
+
+    /** 未登录时 /authorize 302 跳转的登录页 URL（identity-web），透传 authorize 参数。 */
+    private String loginPageUrl = "https://identity.localhost/login";
+
+    /** 受 SSO 会话保护的路径（无有效 SSO cookie → 401）。 */
+    private List<String> protectedPaths = new ArrayList<>(List.of("/api/account/me", "/api/account/profile"));
+
+    // ── client 查询 stub（#15 测试/dev 便利；真 app-registry 接入在 #6，届时移除） ──
+
+    /** stub 预置消费方 client_id。 */
+    private String stubClientId = "demo-client";
+
+    /** stub 预置消费方 client_secret 明文（#15 stub 用 BCrypt 自哈希；#6 换 argon2 + 真 app-registry）。 */
+    private String stubClientSecret = "demo-secret-please-change";
+
+    /** stub 预置消费方 redirect_uri 白名单（精确匹配）。 */
+    private List<String> stubRedirectUris =
+        new ArrayList<>(List.of("https://demo.localhost/auth/callback"));
+
+    public long getSessionIdleSeconds() {
+        return sessionIdleSeconds;
+    }
+
+    public void setSessionIdleSeconds(long sessionIdleSeconds) {
+        this.sessionIdleSeconds = sessionIdleSeconds;
+    }
+
+    public long getSessionAbsoluteSeconds() {
+        return sessionAbsoluteSeconds;
+    }
+
+    public void setSessionAbsoluteSeconds(long sessionAbsoluteSeconds) {
+        this.sessionAbsoluteSeconds = sessionAbsoluteSeconds;
+    }
+
+    public long getCodeTtlSeconds() {
+        return codeTtlSeconds;
+    }
+
+    public void setCodeTtlSeconds(long codeTtlSeconds) {
+        this.codeTtlSeconds = codeTtlSeconds;
+    }
+
+    public String getCookieName() {
+        return cookieName;
+    }
+
+    public void setCookieName(String cookieName) {
+        this.cookieName = cookieName;
+    }
+
+    public boolean isCookieSecure() {
+        return cookieSecure;
+    }
+
+    public void setCookieSecure(boolean cookieSecure) {
+        this.cookieSecure = cookieSecure;
+    }
+
+    public String getLoginPageUrl() {
+        return loginPageUrl;
+    }
+
+    public void setLoginPageUrl(String loginPageUrl) {
+        this.loginPageUrl = loginPageUrl;
+    }
+
+    public List<String> getProtectedPaths() {
+        return protectedPaths;
+    }
+
+    public void setProtectedPaths(List<String> protectedPaths) {
+        this.protectedPaths = protectedPaths;
+    }
+
+    public String getStubClientId() {
+        return stubClientId;
+    }
+
+    public void setStubClientId(String stubClientId) {
+        this.stubClientId = stubClientId;
+    }
+
+    public String getStubClientSecret() {
+        return stubClientSecret;
+    }
+
+    public void setStubClientSecret(String stubClientSecret) {
+        this.stubClientSecret = stubClientSecret;
+    }
+
+    public List<String> getStubRedirectUris() {
+        return stubRedirectUris;
+    }
+
+    public void setStubRedirectUris(List<String> stubRedirectUris) {
+        this.stubRedirectUris = stubRedirectUris;
+    }
+}
