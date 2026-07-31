@@ -16,7 +16,6 @@ import com.aieducenter.aieducenteridentity.account.infrastructure.verification.V
 import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.util.Assertions;
 import com.cartisan.event.ApplicationEventPublisher;
-import com.cartisan.security.authentication.AuthenticationService;
 
 /**
  * 账号注册应用服务。
@@ -35,7 +34,7 @@ public class AccountRegistrationAppService {
     private final ProfileRepository profileRepository;
     private final AccountPasswordEncoderService passwordEncoderService;
     private final VerificationCodePort verificationCodePort;
-    private final AuthenticationService authenticationService;
+    private final AccountTokenAppService accountTokenAppService;
     private final ApplicationEventPublisher eventPublisher;
 
     public AccountRegistrationAppService(
@@ -43,13 +42,13 @@ public class AccountRegistrationAppService {
             ProfileRepository profileRepository,
             AccountPasswordEncoderService passwordEncoderService,
             VerificationCodePort verificationCodePort,
-            AuthenticationService authenticationService,
+            AccountTokenAppService accountTokenAppService,
             ApplicationEventPublisher eventPublisher) {
         this.accountRepository = accountRepository;
         this.profileRepository = profileRepository;
         this.passwordEncoderService = passwordEncoderService;
         this.verificationCodePort = verificationCodePort;
-        this.authenticationService = authenticationService;
+        this.accountTokenAppService = accountTokenAppService;
         this.eventPublisher = eventPublisher;
     }
 
@@ -98,14 +97,14 @@ public class AccountRegistrationAppService {
         eventPublisher.publishApplicationEvent(
             new UserRegisteredEvent(saved.getId(), saved.getEmail(), saved.getPhone(), profile.getNickname()));
 
-        // 6. 登录返回 token
-        return login(saved, displayName);
+        // 6. 登录返回 token（access/id JWT，issue #11）
+        return issue(saved, profile);
     }
 
-    private LoginResponse login(Account account, String displayName) {
+    private LoginResponse issue(Account account, Profile profile) {
         account.recordLogin();
         accountRepository.save(account);
-        return LoginResponse.fromSession(authenticationService.login(account.getId(), displayName));
+        return accountTokenAppService.issue(account, profile);
     }
 
     private static String resolveDisplayName(String nickname, String email, String phone) {

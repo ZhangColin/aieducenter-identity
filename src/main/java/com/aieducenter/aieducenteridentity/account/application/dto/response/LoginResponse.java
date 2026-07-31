@@ -1,21 +1,16 @@
 package com.aieducenter.aieducenteridentity.account.application.dto.response;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Objects;
 
-import com.cartisan.security.authentication.TokenInfo;
-
 /**
- * 登录响应——OIDC 形态的可扩展结构（ADR-0002 / studio bug#4 结构部分）。
+ * 登录响应——OIDC 形态的可扩展结构（ADR-0002 / studio bug#4 结构）。
  *
- * <p>Phase 0b：仅 {@link #accessToken}（Sa-Token 会话 token）有值；{@link #refreshToken} 与
- * {@link #idToken} 为占位字段（JWT 三件套的内容在 issue #4 / Phase 1 填充）。先把结构立稳，
- * 避免登录产物从「残缺单字段」到「三 token」时再改响应形状。</p>
+ * <p>{@link #accessToken} + {@link #idToken} 都是 RS256-JWT（issue #11）；{@link #refreshToken} 仍占位 null
+ * （不透明串服务端存，#② 填）。access JWT 同时作 Sa-Token 会话 token 值（见 {@code AccountTokenAppService}）。</p>
  *
- * @param accessToken  访问令牌（当前=Sa-Token 会话 token；Phase 1 起改为 JWT）
- * @param refreshToken 刷新令牌（占位，Phase 1 填——不透明串服务端存）
- * @param idToken      身份令牌（占位，Phase 1 填——JWT）
+ * @param accessToken  访问令牌（RS256-JWT，兼作 Sa-Token 会话 token）
+ * @param refreshToken 刷新令牌（占位 null，#② 填）
+ * @param idToken      身份令牌（RS256-JWT，OIDC 声明）
  * @param tokenType    令牌类型（Bearer）
  * @param expiresIn    accessToken 有效期（秒）
  */
@@ -34,13 +29,15 @@ public record LoginResponse(
     }
 
     /**
-     * 由 Sa-Token 会话 {@link TokenInfo} 构造登录响应。
+     * 由已签发的 access / id JWT 构造登录响应（issue #11）。
      *
-     * <p>Phase 0b：refreshToken / idToken 为占位（Phase 1 填），expiresIn 取自会话过期时间。</p>
+     * @param accessTokenJwt access_token(JWT)
+     * @param idTokenJwt     id_token(JWT)
+     * @param expiresIn      accessToken 有效期（秒）
      */
-    public static LoginResponse fromSession(TokenInfo tokenInfo) {
-        Objects.requireNonNull(tokenInfo, "tokenInfo must not be null");
-        long expiresIn = Math.max(0, Duration.between(Instant.now(), tokenInfo.expireTime()).toSeconds());
-        return new LoginResponse(tokenInfo.token(), null, null, "Bearer", expiresIn);
+    public static LoginResponse of(String accessTokenJwt, String idTokenJwt, long expiresIn) {
+        Objects.requireNonNull(accessTokenJwt, "accessTokenJwt must not be null");
+        Objects.requireNonNull(idTokenJwt, "idTokenJwt must not be null");
+        return new LoginResponse(accessTokenJwt, null, idTokenJwt, "Bearer", expiresIn);
     }
 }

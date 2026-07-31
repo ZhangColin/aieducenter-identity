@@ -1,6 +1,7 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -15,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.cartisan.test.base.ApiTestAssertions;
+import com.jayway.jsonpath.JsonPath;
+import com.nimbusds.jwt.JWTClaimsSet;
 
 /**
  * 登录 / 登出 HTTP 黑盒集成测试。
@@ -33,16 +36,53 @@ class AccountLoginIntegrationTest extends AccountIntegrationTestBase {
     // ── 密码登录 ──────────────────────────────────────────────────────────────
 
     @Test
-    void given_correct_password_when_login_then_token_returned() throws Exception {
+    void given_correct_password_when_login_then_access_and_id_jwt_returned() throws Exception {
         String phone = "13900100001";
         registerPhoneAccount(phone, PASSWORD);
 
-        mvc.perform(post("/api/account/login")
+        MvcResult result = mvc.perform(post("/api/account/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginPasswordBody(phone, PASSWORD, getCaptcha())))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
-            .andExpect(jsonPath("$.data.tokenType").value("Bearer"));
+            .andExpect(jsonPath("$.data.idToken").isNotEmpty())
+            .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
+            .andReturn();
+
+        String accessToken = extractAccessToken(result);
+        String idToken = extractIdToken(result);
+        // 两枚都是 3 段紧凑 JWT、头 alg=RS256（issue #11）
+        assertThat(accessToken.split("\\.")).hasSize(3);
+        assertThat(idToken.split("\\.")).hasSize(3);
+        assertThat(jwtHeaderAlg(accessToken)).isEqualTo("RS256");
+        assertThat(jwtHeaderAlg(idToken)).isEqualTo("RS256");
+        // expiresIn ≈ 900（默认 access TTL；cartisan-web 对 long 统一串化，读字符串再解析）
+        long expiresIn = Long.parseLong(JsonPath.read(result.getResponse().getContentAsString(), "$.data.expiresIn"));
+        assertThat(expiresIn).isBetween(850L, 905L);
+    }
+
+    // ── 验收②：用签名公钥本地验签 / 篡改失败 ─────────────────────────────────────
+
+    @Test
+    void given_login_when_verify_with_public_key_then_valid_but_tampered_fails() throws Exception {
+        String phone = "13900100010";
+        registerPhoneAccount(phone, PASSWORD);
+        String accessToken = loginAndExtractToken(phone, PASSWORD);
+
+        // 用签名公钥本地验签通过；payload 含 sub/iss/exp
+        JWTClaimsSet claims = verifyJwtWithPublicKey(accessToken);
+        assertThat(claims.getSubject()).isNotBlank();
+        assertThat(claims.getIssuer()).isEqualTo("https://identity.aieducenter.com");
+        assertThat(claims.getExpirationTime()).isNotNull();
+
+        // 篡改 payload（中段）一字节 → 验签失败
+        String[] parts = accessToken.split("\\.", 3);
+        byte[] payload = java.util.Base64.getUrlDecoder().decode(parts[1]);
+        payload[0] ^= 0x01;
+        String tampered = parts[0] + "."
+            + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(payload) + "." + parts[2];
+        assertThatThrownBy(() -> verifyJwtWithPublicKey(tampered))
+            .isInstanceOfAny(java.text.ParseException.class, AssertionError.class);
     }
 
     @Test

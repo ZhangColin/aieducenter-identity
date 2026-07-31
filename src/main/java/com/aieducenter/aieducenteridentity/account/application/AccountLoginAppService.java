@@ -7,8 +7,10 @@ import com.aieducenter.aieducenteridentity.account.application.dto.command.Login
 import com.aieducenter.aieducenteridentity.account.application.dto.command.LoginBySmsCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.response.LoginResponse;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
+import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
 import com.aieducenter.aieducenteridentity.account.domain.error.AccountError;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
+import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
 import com.aieducenter.aieducenteridentity.account.infrastructure.verification.CaptchaPort;
 import com.aieducenter.aieducenteridentity.account.infrastructure.verification.VerificationCodePort;
@@ -33,21 +35,27 @@ public class AccountLoginAppService {
     private static final String LOGIN_PURPOSE = "LOGIN";
 
     private final AccountRepository accountRepository;
+    private final ProfileRepository profileRepository;
     private final AccountPasswordEncoderService passwordEncoderService;
     private final CaptchaPort captchaPort;
     private final VerificationCodePort verificationCodePort;
+    private final AccountTokenAppService accountTokenAppService;
     private final AuthenticationService authenticationService;
 
     public AccountLoginAppService(
             AccountRepository accountRepository,
+            ProfileRepository profileRepository,
             AccountPasswordEncoderService passwordEncoderService,
             CaptchaPort captchaPort,
             VerificationCodePort verificationCodePort,
+            AccountTokenAppService accountTokenAppService,
             AuthenticationService authenticationService) {
         this.accountRepository = accountRepository;
+        this.profileRepository = profileRepository;
         this.passwordEncoderService = passwordEncoderService;
         this.captchaPort = captchaPort;
         this.verificationCodePort = verificationCodePort;
+        this.accountTokenAppService = accountTokenAppService;
         this.authenticationService = authenticationService;
     }
 
@@ -76,13 +84,12 @@ public class AccountLoginAppService {
         // 4. 身份已证明——检查停用/锁定（具体原因）
         account.ensureLoginable();
 
-        // 5. 记录登录 + 签发会话
+        // 5. 记录登录 + 签发 token（access/id JWT，issue #11）。access JWT 兼作 Sa-Token 会话 token，
+        // bug#1（userName 写入 SaSession 供 RequestContext 读取）在 AccountTokenAppService→IdpSessionRegistrar 保留。
         account.recordLogin();
         accountRepository.save(account);
-        // bug#1：login(userId, userName) 把 userName 写入 SaSession，SecurityFilter 在后续请求读入
-        // RequestContext。tenantId 刻意不设——平台不变式 tenantId 全程可空（C 端无租户，按 userId 隔离），
-        // 组织/租户上下文留到 Phase 4 再由其域填入会话。
-        return LoginResponse.fromSession(authenticationService.login(account.getId(), displayNameOf(account)));
+        Profile profile = profileRepository.findById(account.getId()).orElse(null);
+        return accountTokenAppService.issue(account, profile);
     }
 
     /**
@@ -104,7 +111,8 @@ public class AccountLoginAppService {
 
         account.recordLogin();
         accountRepository.save(account);
-        return LoginResponse.fromSession(authenticationService.login(account.getId(), displayNameOf(account)));
+        Profile profile = profileRepository.findById(account.getId()).orElse(null);
+        return accountTokenAppService.issue(account, profile);
     }
 
     /**
@@ -112,9 +120,5 @@ public class AccountLoginAppService {
      */
     public void logout() {
         authenticationService.logout();
-    }
-
-    private static String displayNameOf(Account account) {
-        return account.getEmail() != null ? account.getEmail() : account.getPhone();
     }
 }

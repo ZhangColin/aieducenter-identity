@@ -16,6 +16,7 @@ import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.cartisan.test.base.ApiTestAssertions;
+import com.nimbusds.jwt.JWTClaimsSet;
 
 /**
  * 注册流程 HTTP 黑盒集成测试。
@@ -43,6 +44,7 @@ class AccountRegistrationIntegrationTest extends AccountIntegrationTestBase {
                 .content(registerPhoneBody(phone, "Password123", "Alice", code)))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+            .andExpect(jsonPath("$.data.idToken").isNotEmpty())
             .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
             .andReturn();
 
@@ -51,8 +53,15 @@ class AccountRegistrationIntegrationTest extends AccountIntegrationTestBase {
         assertThat(account.getPasswordHash()).isNotBlank();
         Profile profile = profileRepository.findById(account.getId()).orElseThrow();
         assertThat(profile.getNickname()).isEqualTo("Alice");
-        // accessToken 非空且即登录
-        assertThat(extractAccessToken(result)).isNotBlank();
+        // access + id 都是 RS256-JWT（issue #11），公钥本地验签通过；id_token 含 sub/phone_number/nickname
+        String accessToken = extractAccessToken(result);
+        String idToken = extractIdToken(result);
+        assertThat(jwtHeaderAlg(accessToken)).isEqualTo("RS256");
+        assertThat(jwtHeaderAlg(idToken)).isEqualTo("RS256");
+        JWTClaimsSet idClaims = verifyJwtWithPublicKey(idToken);
+        assertThat(idClaims.getSubject()).isEqualTo(String.valueOf(account.getId()));
+        assertThat(idClaims.getStringClaim("phone_number")).isEqualTo(phone);
+        assertThat(idClaims.getStringClaim("nickname")).isEqualTo("Alice");
     }
 
     @Test

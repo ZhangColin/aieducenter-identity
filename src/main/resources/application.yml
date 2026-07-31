@@ -52,6 +52,18 @@ sa-token:
   is-share: false
   token-style: uuid
 
+# JWT token 配置（ADR-0002 / issue #11）
+# access JWT 兼作 Sa-Token 会话 token（每次登录用 SaLoginParameter.setTimeout 对齐有效期，故全局 sa-token.timeout 不动）。
+# private-key-path / public-key-path 默认不设 → 内存生成临时密钥（重启失效，prod 必须配 PEM）。
+identity:
+  token:
+    jwt:
+      issuer: https://identity.aieducenter.com
+      access-ttl-seconds: 900
+      key-id: identity-rs256-v1
+      audiences:
+        - aieducenter-identity
+
 management:
   endpoints:
     web:

@@ -122,6 +122,15 @@
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
 
+        <!-- JWT 签名/验签（RS256）+ 未来 JWKS（ADR-0002 / issue #11）。
+             spring-boot 3.4 BOM 与 cartisan-boot BOM 均未托管，钉版本。
+             10.x 以 Java 21 为基线，与本工程一致；不引入 BouncyCastle（RS256 签名/验签 + RSA 密钥生成 nimbus + JDK 即可）。 -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>10.9.1</version>
+        </dependency>
+
         <!-- Utilities -->
         <dependency>
             <groupId>cn.hutool</groupId>
