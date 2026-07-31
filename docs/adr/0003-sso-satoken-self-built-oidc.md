@@ -1,5 +1,7 @@
 # ADR-0003: SSO 实现 = Sa-Token 自搭 OIDC
 
+> **⚠️ 部分修订（2026-07-31）**：本 ADR 的「对外 OIDC 端点自搭」仍有效；但「**会话/登录继续用 Sa-Token**」一条被 [ADR-0004](0004-drop-satoken-single-sso-session.md) 取代——identity 弃 sa-token，改一套 SSO 会话 + token 归 `/token`。下方相关表述保留作历史记录。
+
 - 状态：已定（方向）；oauth2 模块覆盖度为实现期评估项
 - 日期：2026-07-28
 
