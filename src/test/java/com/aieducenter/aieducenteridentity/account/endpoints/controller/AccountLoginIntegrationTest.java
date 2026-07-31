@@ -46,6 +46,7 @@ class AccountLoginIntegrationTest extends AccountIntegrationTestBase {
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
             .andExpect(jsonPath("$.data.idToken").isNotEmpty())
+            .andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
             .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
             .andReturn();
 

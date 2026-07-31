@@ -56,6 +56,9 @@ public enum AccountError implements CodeMessage {
     /** 账号不存在（短信登录等已验证凭据后的兜底，返回 401）。 */
     ACCOUNT_NOT_FOUND(401, "ACCOUNT_012", "账号不存在"),
 
+    /** refresh_token 无效或已过期（非法/已用/过期，/refresh 凭 refresh_token 公开鉴权）。 */
+    REFRESH_TOKEN_INVALID(401, "ACCOUNT_014", "refresh_token 无效或已过期"),
+
     // ========== 资源不存在 (404) ==========
 
     /** 用户不存在（按登录态 userId 查询时的不一致兜底）。 */

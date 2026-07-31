@@ -73,6 +73,12 @@ abstract class AccountIntegrationTestBase extends IdentityIntegrationTestBase {
         return JsonPath.read(body, "$.data.idToken");
     }
 
+    /** 从登录/注册响应中抽取 refreshToken。 */
+    protected static String extractRefreshToken(MvcResult result) throws Exception {
+        String body = result.getResponse().getContentAsString();
+        return JsonPath.read(body, "$.data.refreshToken");
+    }
+
     /** 用签名公钥本地验签 JWT（issue #11 验收②），返回解析后的声明集；签名不匹配抛断言错误。 */
     protected JWTClaimsSet verifyJwtWithPublicKey(String compactJwt) throws Exception {
         SignedJWT jwt = SignedJWT.parse(compactJwt);

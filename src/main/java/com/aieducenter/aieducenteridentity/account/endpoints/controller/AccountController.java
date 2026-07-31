@@ -12,9 +12,11 @@ import com.aieducenter.aieducenteridentity.account.application.AccountLoginAppSe
 import com.aieducenter.aieducenteridentity.account.application.AccountPasswordAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountProfileAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountRegistrationAppService;
+import com.aieducenter.aieducenteridentity.account.application.AccountTokenAppService;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ChangePasswordCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.LoginByPasswordCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.LoginBySmsCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.command.RefreshTokenCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.UpdateProfileCommand;
@@ -30,7 +32,7 @@ import jakarta.validation.Valid;
 /**
  * 账号管理 REST API。
  *
- * <p>公开端点（无需登录）：注册 / 密码登录 / 短信码登录 / 重置密码。
+ * <p>公开端点（无需登录）：注册 / 密码登录 / 短信码登录 / 重置密码 / 刷新 token。
  * 受保护端点（{@link RequireAuth}，bug#2）：登出 / 修改密码 / 查看·编辑 profile。</p>
  */
 @RestController
@@ -43,15 +45,18 @@ public class AccountController {
     private final AccountLoginAppService loginAppService;
     private final AccountPasswordAppService passwordAppService;
     private final AccountProfileAppService profileAppService;
+    private final AccountTokenAppService tokenAppService;
 
     public AccountController(AccountRegistrationAppService registrationAppService,
             AccountLoginAppService loginAppService,
             AccountPasswordAppService passwordAppService,
-            AccountProfileAppService profileAppService) {
+            AccountProfileAppService profileAppService,
+            AccountTokenAppService tokenAppService) {
         this.registrationAppService = registrationAppService;
         this.loginAppService = loginAppService;
         this.passwordAppService = passwordAppService;
         this.profileAppService = profileAppService;
+        this.tokenAppService = tokenAppService;
     }
 
     @PostMapping("/register")
@@ -70,6 +75,12 @@ public class AccountController {
     @Operation(summary = "短信验证码登录", description = "手机号 + 短信验证码")
     public ApiResponse<LoginResponse> loginBySms(@Valid @RequestBody LoginBySmsCommand command) {
         return ApiResponse.ok(loginAppService.loginBySms(command));
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "刷新 token", description = "凭 refresh_token 换新 access + id + refresh（refresh 一次性轮换，凭 refresh_token 本身鉴权）")
+    public ApiResponse<LoginResponse> refresh(@Valid @RequestBody RefreshTokenCommand command) {
+        return ApiResponse.ok(tokenAppService.refresh(command.refreshToken()));
     }
 
     @PostMapping("/logout")

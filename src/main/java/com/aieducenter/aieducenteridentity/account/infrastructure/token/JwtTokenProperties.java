@@ -27,6 +27,9 @@ public class JwtTokenProperties {
     /** access_token / 会话有效期（秒），默认 15 分钟。 */
     private long accessTtlSeconds = 900;
 
+    /** refresh_token 有效期（秒），默认 7 天（issue #13）。 */
+    private long refreshTtlSeconds = 604800;
+
     /** 密钥 ID（kid，写入 JWT 头）。 */
     private String keyId = "identity-rs256-v1";
 

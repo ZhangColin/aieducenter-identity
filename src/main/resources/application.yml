@@ -37,6 +37,8 @@ cartisan:
         - "/api/captcha"
         - "/api/account/verification-code/**"
         - "/api/account/verify-code"
+        # refresh 端点凭 refresh_token 本身鉴权，无需登录态（issue #13）
+        - "/api/account/refresh"
   openapi:
     self:
       app-id: ${OPENAPI_APP_ID:}
@@ -60,6 +62,7 @@ identity:
     jwt:
       issuer: https://identity.aieducenter.com
       access-ttl-seconds: 900
+      refresh-ttl-seconds: 604800
       key-id: identity-rs256-v1
       audiences:
         - aieducenter-identity
