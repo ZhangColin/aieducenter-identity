@@ -58,6 +58,26 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
             .andExpect(status().isUnauthorized());
     }
 
+    // ── /me（issue #12）──────────────────────────────────────────────────────
+
+    @Test
+    void given_logged_in_when_get_me_then_returns_current_user() throws Exception {
+        String phone = "13600100003";
+        registerPhoneAccount(phone, PASSWORD);
+        String token = loginAndExtractToken(phone);
+
+        mvc.perform(get("/api/account/me").header("Authorization", token))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.userId").isString())
+            .andExpect(jsonPath("$.data.phone").value(phone));
+    }
+
+    @Test
+    void given_no_token_when_get_me_then_401() throws Exception {
+        mvc.perform(get("/api/account/me"))
+            .andExpect(status().isUnauthorized());
+    }
+
     @Test
     void given_no_token_when_update_profile_then_401() throws Exception {
         mvc.perform(put("/api/account/profile")

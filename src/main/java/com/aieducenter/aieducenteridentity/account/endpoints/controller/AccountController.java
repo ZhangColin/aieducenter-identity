@@ -106,6 +106,13 @@ public class AccountController {
         return ApiResponse.ok();
     }
 
+    @GetMapping("/me")
+    @RequireAuth
+    @Operation(summary = "当前登录用户", description = "返回当前登录用户的 profile（供应用界面显示「我是谁」，issue #12）")
+    public ApiResponse<AccountProfileResponse> getCurrentUser() {
+        return ApiResponse.ok(profileAppService.getCurrentProfile());
+    }
+
     @GetMapping("/profile")
     @RequireAuth
     @Operation(summary = "查看个人资料", description = "返回当前登录用户的 profile")
