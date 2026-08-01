@@ -55,7 +55,7 @@ class SsoAuthorizeAppServiceTest {
         SsoSession session = new SsoSession("sess", 700L, "阿福",
             java.time.Instant.now(), java.time.Instant.now().plusSeconds(3600));
         when(sessionRepository.findActive("sess")).thenReturn(Optional.of(session));
-        when(codeService.issueCodeAndRedirect(eq(700L), eq(client), eq(REDIRECT_URI), eq("non@ce"), eq("openid"), eq("st")))
+        when(codeService.issueCodeAndRedirect(eq(700L), eq(client), eq(REDIRECT_URI), eq("non@ce"), eq("openid"), eq("sess"), eq("st")))
             .thenReturn(REDIRECT_URI + "?code=ABC&state=st");
 
         String location = service.handleAuthorize(

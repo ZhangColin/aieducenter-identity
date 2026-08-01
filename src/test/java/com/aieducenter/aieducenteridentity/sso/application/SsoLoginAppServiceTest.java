@@ -71,7 +71,7 @@ class SsoLoginAppServiceTest {
         when(passwordEncoderService.verifyPassword(PASSWORD, "hash")).thenReturn(true);
         when(sessionRepository.create(eq(900L), any())).thenReturn(
             new SsoSession("sess-1", 900L, ACCOUNT, Instant.now(), Instant.now().plusSeconds(60)));
-        when(codeService.issueCodeAndRedirect(eq(900L), eq(client), eq(REDIRECT_URI), eq("non@ce"), eq(null), eq("st")))
+        when(codeService.issueCodeAndRedirect(eq(900L), eq(client), eq(REDIRECT_URI), eq("non@ce"), eq(null), eq("sess-1"), eq("st")))
             .thenReturn(REDIRECT_URI + "?code=ABC&state=st");
 
         SsoLoginResult result = service.loginByPassword(command());

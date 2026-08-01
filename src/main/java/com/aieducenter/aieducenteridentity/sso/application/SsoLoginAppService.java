@@ -79,7 +79,8 @@ public class SsoLoginAppService {
         String nickname = profile != null ? profile.getNickname() : null;
         SsoSession session = sessionRepository.create(account.getId(), account.displayLabel(nickname));
         String redirectUrl = codeService.issueCodeAndRedirect(
-            account.getId(), client, command.redirectUri(), command.nonce(), null, command.state());
+            account.getId(), client, command.redirectUri(), command.nonce(), null,
+            session.sessionId(), command.state());
         return new SsoLoginResult(session.sessionId(), redirectUrl);
     }
 }

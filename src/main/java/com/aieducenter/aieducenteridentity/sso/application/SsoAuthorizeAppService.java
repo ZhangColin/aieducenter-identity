@@ -56,7 +56,8 @@ public class SsoAuthorizeAppService {
         if (session.isPresent()) {
             SsoSession s = session.get();
             return codeService.issueCodeAndRedirect(
-                s.userId(), client, request.redirectUri(), request.nonce(), request.scope(), request.state());
+                s.userId(), client, request.redirectUri(), request.nonce(), request.scope(),
+                s.sessionId(), request.state());
         }
         return buildLoginPageUrl(request);
     }

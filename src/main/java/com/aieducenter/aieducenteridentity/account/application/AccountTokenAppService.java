@@ -9,6 +9,7 @@ import com.aieducenter.aieducenteridentity.account.domain.error.AccountError;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.aieducenter.aieducenteridentity.account.domain.token.IdpSessionRegistrar;
+import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenPayload;
 import com.cartisan.core.exception.DomainException;
 
 /**
@@ -66,6 +67,7 @@ public class AccountTokenAppService {
      */
     public LoginResponse refresh(String refreshToken) {
         Long userId = tokenIssuer.consumeRefresh(refreshToken)
+            .map(RefreshTokenPayload::userId)
             .orElseThrow(() -> new DomainException(AccountError.REFRESH_TOKEN_INVALID));
         Account account = accountRepository.findById(userId)
             .orElseThrow(() -> new DomainException(AccountError.USER_NOT_FOUND));

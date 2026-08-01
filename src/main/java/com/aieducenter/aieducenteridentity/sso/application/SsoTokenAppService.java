@@ -8,6 +8,7 @@ import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
+import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenPayload;
 import com.aieducenter.aieducenteridentity.sso.application.dto.TokenRequest;
 import com.aieducenter.aieducenteridentity.sso.application.dto.TokenResponse;
 import com.aieducenter.aieducenteridentity.sso.domain.client.ClientSecretVerifier;
@@ -17,6 +18,7 @@ import com.aieducenter.aieducenteridentity.sso.domain.code.AuthorizationCodeStor
 import com.aieducenter.aieducenteridentity.sso.domain.code.IssuedAuthorizationCode;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
 import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
+import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.cartisan.core.exception.DomainException;
 
 /**
@@ -40,16 +42,18 @@ public class SsoTokenAppService {
     private final TokenIssuerAppService tokenIssuer;
     private final AccountRepository accountRepository;
     private final ProfileRepository profileRepository;
+    private final SsoSessionRepository sessionRepository;
 
     public SsoTokenAppService(SsoClientRepository clientRepository, ClientSecretVerifier clientSecretVerifier,
             AuthorizationCodeStore codeStore, TokenIssuerAppService tokenIssuer, AccountRepository accountRepository,
-            ProfileRepository profileRepository) {
+            ProfileRepository profileRepository, SsoSessionRepository sessionRepository) {
         this.clientRepository = clientRepository;
         this.clientSecretVerifier = clientSecretVerifier;
         this.codeStore = codeStore;
         this.tokenIssuer = tokenIssuer;
         this.accountRepository = accountRepository;
         this.profileRepository = profileRepository;
+        this.sessionRepository = sessionRepository;
     }
 
     /**
@@ -88,8 +92,9 @@ public class SsoTokenAppService {
         Account account = loadAccount(payload.userId());
         ensureUsable(account);
         Profile profile = profileRepository.findById(payload.userId()).orElse(null);
-        // scope 透传进 access_token，供 /userinfo 按授权范围过滤返回资料（issue #17）
-        LoginResponse issued = tokenIssuer.issue(account, profile, payload.nonce(), payload.scope());
+        // scope 透传进 access_token，供 /userinfo 按授权范围过滤返回资料（issue #17）；
+        // sessionId 透传绑进 refresh（准 SLO，issue #19）。
+        LoginResponse issued = tokenIssuer.issue(account, profile, payload.nonce(), payload.scope(), payload.sessionId());
         return toResponse(issued);
     }
 
@@ -97,13 +102,18 @@ public class SsoTokenAppService {
         if (request.refreshToken() == null || request.refreshToken().isBlank()) {
             throw new OidcException(SsoError.INVALID_REQUEST, "refresh_token 缺失");
         }
-        Long userId = tokenIssuer.consumeRefresh(request.refreshToken())
+        RefreshTokenPayload payload = tokenIssuer.consumeRefresh(request.refreshToken())
             .orElseThrow(() -> new OidcException(SsoError.INVALID_GRANT, "refresh_token 无效或已使用"));
-        Account account = loadAccount(userId);
+        // 准 SLO（issue #19）：refresh 绑 SSO 会话——会话已失效（登出/改密/封号/过期）则拒发，
+        // access 15min 短命自然收尾。sessionId 为空（遗留链路 refresh）跳过校验；#21 删遗留链路后所有 SSO refresh 均带 sessionId。
+        if (payload.sessionId() != null && sessionRepository.findActive(payload.sessionId()).isEmpty()) {
+            throw new OidcException(SsoError.INVALID_GRANT, "SSO 会话已失效");
+        }
+        Account account = loadAccount(payload.userId());
         ensureUsable(account);
-        Profile profile = profileRepository.findById(userId).orElse(null);
-        // refresh 不携带 nonce/scope（scope 仅授权码流从 code 绑定带入；refresh 绑 SSO 会话留 #19）
-        LoginResponse issued = tokenIssuer.issue(account, profile, null, null);
+        Profile profile = profileRepository.findById(payload.userId()).orElse(null);
+        // refresh 不携带 nonce/scope；新 refresh 绑同一仍存活的 SSO 会话。
+        LoginResponse issued = tokenIssuer.issue(account, profile, null, null, payload.sessionId());
         return toResponse(issued);
     }
 

@@ -34,13 +34,14 @@ public class AuthorizationCodeAppService {
      * @param redirectUri 白名单回调地址
      * @param nonce       OIDC nonce（可空）
      * @param scope       授权范围（可空）
+     * @param sessionId   发 code 时的 SSO sessionId（透传绑进 code，供 /token 签 refresh 时绑会话；可空）
      * @param state       CSRF 串（可空，回带）
      * @return {@code redirect_uri?code=&state=}（state 为空则不带）
      */
     public String issueCodeAndRedirect(Long userId, SsoClient client, String redirectUri,
-            String nonce, String scope, String state) {
+            String nonce, String scope, String sessionId, String state) {
         String code = codeStore.issue(new IssuedAuthorizationCode(
-            client.clientId(), redirectUri, userId, nonce, scope));
+            client.clientId(), redirectUri, userId, nonce, scope, sessionId));
         return appendQuery(redirectUri, "code", code, "state", state);
     }
 

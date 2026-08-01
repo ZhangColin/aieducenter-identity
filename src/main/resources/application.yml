@@ -46,6 +46,8 @@ cartisan:
         - "/jwks"
         - "/.well-known/**"
         - "/api/auth/**"
+        # OIDC RP-initiated 登出（issue #19）：清 SSO 会话+cookie，不经 sa-token
+        - "/logout"
   openapi:
     self:
       app-id: ${OPENAPI_APP_ID:}

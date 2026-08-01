@@ -16,6 +16,7 @@ import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenClaim
 import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenSigner;
 import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenClaims;
 import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenSigner;
+import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenPayload;
 import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenStore;
 import com.aieducenter.aieducenteridentity.account.infrastructure.token.JwtTokenProperties;
 
@@ -74,18 +75,31 @@ public class TokenIssuerAppService {
     }
 
     /**
-     * 为已认证账号签发三件套；OIDC {@code /token}（授权码流）传 nonce（写 id_token）+ scope（写 access_token）。
+     * 为已认证账号签发三件套（4 参数便捷重载，sessionId = null——不绑 SSO 会话）。
      *
-     * <p>scope 进 access_token，供 {@code /userinfo} 按授权范围过滤返回的 profile/email/phone 资料（issue #17）。
-     * 非授权码流（login/register/refresh）传 null——access_token 不带 scope，{@code /userinfo} 仅返回 {@code sub}。</p>
-     *
-     * @param account 已通过身份验证的账号
-     * @param profile 账号个人资料（可空——取 nickname/avatar 进 id_token）
-     * @param nonce   OIDC nonce（/authorize 透传；非授权码流传 null）
-     * @param scope   授权范围（空格分隔串；授权码流来自 code 绑定，非授权码流传 null）
-     * @return 登录响应（access + refresh + id 三 token）
+     * <p>遗留 sa-token 链路（{@code /api/account/login} 等，#21 删）经此重载签发；新 SSO 链路（OIDC {@code /token}）
+     * 须走 {@link #issue(Account, Profile, String, String, String)} 传 sessionId 绑会话。</p>
      */
     public LoginResponse issue(Account account, Profile profile, String nonce, String scope) {
+        return issue(account, profile, nonce, scope, null);
+    }
+
+    /**
+     * 为已认证账号签发三件套；OIDC {@code /token}（授权码流）传 nonce（写 id_token）+ scope（写 access_token）+
+     * sessionId（绑 SSO 会话，准 SLO）。
+     *
+     * <p>scope 进 access_token，供 {@code /userinfo} 按授权范围过滤返回的 profile/email/phone 资料（issue #17）。
+     * 非授权码流（login/register/refresh）传 null——access_token 不带 scope，{@code /userinfo} 仅返回 {@code sub}。
+     * sessionId 绑进 refresh_token：登出/改密/封号清会话后，refresh grant 校验会话存活，否则失效（issue #19 准 SLO）。</p>
+     *
+     * @param account   已通过身份验证的账号
+     * @param profile   账号个人资料（可空——取 nickname/avatar 进 id_token）
+     * @param nonce     OIDC nonce（/authorize 透传；非授权码流传 null）
+     * @param scope     授权范围（空格分隔串；授权码流来自 code 绑定，非授权码流传 null）
+     * @param sessionId 签发 refresh 时绑定的 SSO sessionId（准 SLO；遗留链路传 null）
+     * @return 登录响应（access + refresh + id 三 token）
+     */
+    public LoginResponse issue(Account account, Profile profile, String nonce, String scope, String sessionId) {
         long accessTtl = properties.getAccessTtlSeconds();
         Instant iat = Instant.now();
         Instant exp = iat.plusSeconds(accessTtl);
@@ -95,11 +109,9 @@ public class TokenIssuerAppService {
             properties.getIssuer(), userId, properties.getAudiences(), iat, exp, newJti(), scope));
         String idJwt = idTokenSigner.sign(buildIdClaims(account, profile, userId, iat, exp, nonce));
 
-        // 不透明 refresh_token 服务端存（轮换用）。
-        // NOTE: 当前只绑 userId，未绑 SSO 会话；CONTEXT「refresh 绑 SSO 会话（过期即失效）」的绑定校验留 #19
-        //（登出/改密踢人需按 userId 清会话 + refresh）。届时 RefreshTokenStore 需扩 sessionId 维度。
+        // 不透明 refresh_token 服务端存（轮换用）；绑 SSO sessionId（准 SLO：会话失效即失效，issue #19）。
         String refreshToken = newRefreshToken();
-        refreshStore.save(refreshToken, account.getId(), Duration.ofSeconds(properties.getRefreshTtlSeconds()));
+        refreshStore.save(refreshToken, account.getId(), sessionId, Duration.ofSeconds(properties.getRefreshTtlSeconds()));
 
         return LoginResponse.of(accessJwt, refreshToken, idJwt, accessTtl);
     }
@@ -107,13 +119,13 @@ public class TokenIssuerAppService {
     /**
      * 原子取删 refresh_token（GETDEL 语义，轮换防重放）——薄封装 {@link RefreshTokenStore}。
      *
-     * <p>refresh grant 的前置步骤：命中返回 userId（调用方据此加载账号、签发新三件套），同一 refresh 再 consume
-     * 返回 empty（已轮换/已用/过期）。非法 refresh 的错误映射由调用方决定（遗留端点抛 REFRESH_TOKEN_INVALID，
-     * OIDC {@code /token} 抛 invalid_grant）。</p>
+     * <p>refresh grant 的前置步骤：命中返回载荷（userId + sessionId——OIDC {@code /token} 凭 sessionId 校验 SSO 会话
+     * 仍存活，issue #19 准 SLO），同一 refresh 再 consume 返回 empty（已轮换/已用/过期）。非法 refresh 的错误映射
+     * 由调用方决定（遗留端点抛 REFRESH_TOKEN_INVALID，OIDC {@code /token} 抛 invalid_grant）。</p>
      *
-     * @return 命中返回 userId；不存在/已用/过期返回 empty
+     * @return 命中返回载荷（userId + sessionId）；不存在/已用/过期返回 empty
      */
-    public Optional<Long> consumeRefresh(String refreshToken) {
+    public Optional<RefreshTokenPayload> consumeRefresh(String refreshToken) {
         return refreshStore.consume(refreshToken);
     }
 

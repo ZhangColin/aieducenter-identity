@@ -1,7 +1,5 @@
 package com.aieducenter.aieducenteridentity.account.application;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,7 +13,6 @@ import com.aieducenter.aieducenteridentity.account.infrastructure.verification.V
 import com.cartisan.core.context.RequestContext;
 import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.DomainException;
-import com.cartisan.security.authentication.AuthenticationService;
 
 /**
  * 账号密码管理应用服务——重置密码（验证码）+ 修改密码（验旧密码）。
@@ -26,23 +23,22 @@ import com.cartisan.security.authentication.AuthenticationService;
 @Transactional
 public class AccountPasswordAppService {
 
-    private static final Logger log = LoggerFactory.getLogger(AccountPasswordAppService.class);
     private static final String RESET_PURPOSE = "RESET_PASSWORD";
 
     private final AccountRepository accountRepository;
     private final AccountPasswordEncoderService passwordEncoderService;
     private final VerificationCodePort verificationCodePort;
-    private final AuthenticationService authenticationService;
+    private final SsoSessionRevoker sessionRevoker;
 
     public AccountPasswordAppService(
             AccountRepository accountRepository,
             AccountPasswordEncoderService passwordEncoderService,
             VerificationCodePort verificationCodePort,
-            AuthenticationService authenticationService) {
+            SsoSessionRevoker sessionRevoker) {
         this.accountRepository = accountRepository;
         this.passwordEncoderService = passwordEncoderService;
         this.verificationCodePort = verificationCodePort;
-        this.authenticationService = authenticationService;
+        this.sessionRevoker = sessionRevoker;
     }
 
     /**
@@ -70,7 +66,7 @@ public class AccountPasswordAppService {
         // 3. 重置 + 踢出会话
         user.resetPassword(passwordEncoderService.encodePassword(command.newPassword()));
         accountRepository.save(user);
-        kickoutQuietly(user.getId());
+        sessionRevoker.revokeQuietly(user.getId());
     }
 
     /**
@@ -92,14 +88,6 @@ public class AccountPasswordAppService {
 
         account.changePassword(passwordEncoderService.encodePassword(command.newPassword()));
         accountRepository.save(account);
-        kickoutQuietly(account.getId());
-    }
-
-    private void kickoutQuietly(Long userId) {
-        try {
-            authenticationService.kickout(userId);
-        } catch (Exception e) {
-            log.warn("kickout failed userId={}", userId, e);
-        }
+        sessionRevoker.revokeQuietly(account.getId());
     }
 }

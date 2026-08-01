@@ -28,7 +28,7 @@ class RedisAuthorizationCodeStoreAdapterTest extends IdentityIntegrationTestBase
     private SsoProperties properties;
 
     private IssuedAuthorizationCode payload(String clientId, String redirectUri) {
-        return new IssuedAuthorizationCode(clientId, redirectUri, 300L, "nonce-xyz", "openid profile");
+        return new IssuedAuthorizationCode(clientId, redirectUri, 300L, "nonce-xyz", "openid profile", "sess-store");
     }
 
     @Test
@@ -42,6 +42,7 @@ class RedisAuthorizationCodeStoreAdapterTest extends IdentityIntegrationTestBase
         assertThat(consumed.userId()).isEqualTo(300L);
         assertThat(consumed.nonce()).isEqualTo("nonce-xyz");
         assertThat(consumed.scope()).isEqualTo("openid profile");
+        assertThat(consumed.sessionId()).isEqualTo("sess-store");
 
         // TTL 在 code 有效期窗口内
         Long ttl = redisTemplate.getExpire(RedisAuthorizationCodeStoreAdapter.CODE_KEY_PREFIX + code);
