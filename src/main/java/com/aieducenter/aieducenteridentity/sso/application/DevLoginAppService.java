@@ -48,6 +48,7 @@ public class DevLoginAppService {
      * 以预置测试账号建 SSO 会话 + 发 code。
      *
      * @throws com.aieducenter.aieducenteridentity.sso.domain.error.OidcException client/redirect_uri 无效（400）
+     * @throws com.cartisan.core.exception.DomainException 预置账号停用/锁定（ACCOUNT_DISABLED/LOCKED）
      */
     @Transactional
     public SsoLoginResult loginAsDevAccount(String clientId, String redirectUri, String state, String nonce) {
@@ -58,6 +59,8 @@ public class DevLoginAppService {
             .orElseThrow(() -> new IllegalStateException(
                 "dev 测试账号未种：" + properties.getDevLogin().getAccountEmail()));
         account.ensureLoginable();
+        account.recordLogin();
+        accountRepository.save(account);
 
         Profile profile = profileRepository.findById(account.getId()).orElse(null);
         String nickname = profile != null ? profile.getNickname() : null;

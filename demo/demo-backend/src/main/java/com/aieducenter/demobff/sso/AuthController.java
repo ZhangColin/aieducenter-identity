@@ -49,7 +49,7 @@ public class AuthController {
             @RequestParam(value = "state", required = false) String state,
             @CookieValue(value = "oauth_txn", required = false) String txn,
             HttpServletResponse response) {
-        if (txn == null || state == null || !txn.startsWith(state + ":")) {
+        if (txn == null || state == null || !state.equals(expectedStateOf(txn))) {
             return redirect(props.getAppBaseUrl() + "/?error=state_mismatch");
         }
         TokenResponse tokens;
@@ -79,6 +79,15 @@ public class AuthController {
 
     private static ResponseEntity<Void> redirect(String location) {
         return ResponseEntity.status(HttpStatus.FOUND).location(java.net.URI.create(location)).build();
+    }
+
+    /**
+     * 从 oauth_txn cookie（"<state>:<nonce>"）切出 state 段做精确比对；nonce 段留给 #17 校验 id_token。
+     * 无冒号分隔符 → 视为非法，返回 null 触发 state_mismatch。
+     */
+    private static String expectedStateOf(String txn) {
+        int idx = txn.indexOf(':');
+        return idx < 0 ? null : txn.substring(0, idx);
     }
 
     private static Cookie findCookie(HttpServletRequest request, String name) {
