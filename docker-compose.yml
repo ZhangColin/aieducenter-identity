@@ -1,0 +1,22 @@
+# 本地联调用：identity 依赖的 PG + Redis（issue #16）。
+# demo-backend 无 DB，不在此列。demo-web 用 pnpm dev 本地跑。
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: identity-postgres
+    environment:
+      POSTGRES_DB: aieducenter
+      POSTGRES_USER: aiedu
+      POSTGRES_PASSWORD: dev123
+    ports:
+      - "5432:5432"
+    volumes:
+      - identity-pg:/var/lib/postgresql/data
+  redis:
+    image: redis:7-alpine
+    container_name: identity-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  identity-pg:
