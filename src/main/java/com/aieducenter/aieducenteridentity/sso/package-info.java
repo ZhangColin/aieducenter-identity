@@ -9,7 +9,7 @@
  *   <li>OIDC Token Endpoint {@code /token}（code 换 access/id/refresh；refresh 轮换）</li>
  *   <li>授权码存储（一次性 60s，绑 client/redirect_uri）</li>
  *   <li>SsoClient 查询（当前 stub，#6 接 app-registry）</li>
- *   <li>SSO 会话过滤器（受保护接口凭 SSO cookie 认人，替代 {@code @RequireAuth}）</li>
+ *   <li>SSO 会话过滤器（受保护接口凭 SSO cookie 认人，全库唯一认人入口）</li>
  * </ul>
  *
  * <h3>边界</h3>

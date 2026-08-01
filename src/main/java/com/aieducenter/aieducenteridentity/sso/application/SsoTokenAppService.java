@@ -105,8 +105,9 @@ public class SsoTokenAppService {
         RefreshTokenPayload payload = tokenIssuer.consumeRefresh(request.refreshToken())
             .orElseThrow(() -> new OidcException(SsoError.INVALID_GRANT, "refresh_token 无效或已使用"));
         // 准 SLO（issue #19）：refresh 绑 SSO 会话——会话已失效（登出/改密/封号/过期）则拒发，
-        // access 15min 短命自然收尾。sessionId 为空（遗留链路 refresh）跳过校验；#21 删遗留链路后所有 SSO refresh 均带 sessionId。
-        if (payload.sessionId() != null && sessionRepository.findActive(payload.sessionId()).isEmpty()) {
+        // access 15min 短命自然收尾。sessionId 为空 = 旧链路（#21 已删）签发的 refresh，一并拒发——
+        // 它们无法通过踢人校验，留着就是永久后门。
+        if (payload.sessionId() == null || sessionRepository.findActive(payload.sessionId()).isEmpty()) {
             throw new OidcException(SsoError.INVALID_GRANT, "SSO 会话已失效");
         }
         Account account = loadAccount(payload.userId());

@@ -13,14 +13,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.aieducenter.aieducenteridentity.account.application.AccountPasswordAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountStatusAppService;
-import com.aieducenter.aieducenteridentity.account.application.dto.command.ChangePasswordCommand;
-import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
-import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
-import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
-import com.cartisan.core.context.RequestContext;
 import com.jayway.jsonpath.JsonPath;
 
 import jakarta.servlet.http.Cookie;
@@ -39,17 +33,10 @@ class SsoKickoutIntegrationTest extends SsoIntegrationTestBase {
     private static final String NEW_PASSWORD = "NewPass456";
 
     @Autowired
-    private AccountRepository accountRepository;
-    @Autowired
-    private AccountPasswordEncoderService passwordEncoderService;
-    @Autowired
-    private AccountPasswordAppService passwordAppService;
-    @Autowired
     private AccountStatusAppService statusAppService;
 
     private Long createAccount() {
-        Account account = Account.register(null, PHONE, passwordEncoderService.encodePassword(PASSWORD));
-        return accountRepository.save(account).getId();
+        return createPhoneAccount(PHONE, PASSWORD);
     }
 
     private Cookie ssoLogin(Long userId) {
@@ -75,10 +62,11 @@ class SsoKickoutIntegrationTest extends SsoIntegrationTestBase {
         Cookie cookie = ssoLogin(userId);
         assertSsoEnabled(cookie);
 
-        // 改密（应用服务；RequestContext 设 userId 模拟登录态——改密 HTTP 入口 sa-token 链路 #21 切换）
-        RequestContext context = new RequestContext(null, null, null, null, userId, "u", null, null);
-        RequestContext.run(context, () -> passwordAppService.changePassword(
-            new ChangePasswordCommand(PASSWORD, NEW_PASSWORD)));
+        // 改密（HTTP 入口凭 SSO cookie 认人，issue #21）→ 踢出该 userId 所有 SSO 会话
+        mvc.perform(post("/api/account/change-password").cookie(cookie)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"oldPassword\":\"" + PASSWORD + "\",\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
+            .andExpect(status().isOk());
 
         assertSsoRevoked(cookie);
     }

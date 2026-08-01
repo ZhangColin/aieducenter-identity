@@ -170,6 +170,20 @@ class SsoTokenAppServiceTest {
     }
 
     @Test
+    void given_legacy_refresh_without_session_when_token_then_invalid_grant() {
+        // #21 收尾：旧链路签发的 refresh 不绑 SSO 会话（sessionId=null）→ 一律拒发，
+        // 否则它们永远绕过改密/登出踢人的准 SLO 校验
+        when(tokenIssuer.consumeRefresh("RT")).thenReturn(
+            Optional.of(new RefreshTokenPayload(USER_ID, null)));
+
+        assertThatThrownBy(() -> service.token(new TokenRequest(
+            "refresh_token", null, null, CLIENT_ID, SECRET, "RT")))
+            .isInstanceOf(OidcException.class)
+            .extracting(ex -> ((OidcException) ex).error())
+            .isEqualTo(SsoError.INVALID_GRANT);
+    }
+
+    @Test
     void given_invalid_refresh_when_token_then_invalid_grant() {
         when(tokenIssuer.consumeRefresh("RT")).thenReturn(Optional.empty());
 

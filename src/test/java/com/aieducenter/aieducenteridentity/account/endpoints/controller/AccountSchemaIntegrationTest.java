@@ -1,17 +1,13 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
-import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
-import com.cartisan.test.base.ApiTestAssertions;
 
 /**
  * Account schema 守护测试——验 ADR-0001 / acceptance 的 schema 落地：
@@ -26,9 +22,6 @@ class AccountSchemaIntegrationTest extends AccountIntegrationTestBase {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private AccountRepository accountRepository;
 
     @Test
     void act_account_has_no_username_column() {
@@ -49,20 +42,19 @@ class AccountSchemaIntegrationTest extends AccountIntegrationTestBase {
     }
 
     @Test
-    void soft_deleted_email_can_be_re_registered_via_partial_unique_index() throws Exception {
+    void soft_deleted_email_can_be_re_registered_via_partial_unique_index() {
         String email = "recycle@example.com";
         // given — 先建号再软删
         Account first = Account.register(email, null, "hashed-pw");
         accountRepository.save(first);
         accountRepository.delete(first); // 软删（deleted=true）
 
-        // when — 同邮箱重新注册（一次性发码，真实验证）→ 不撞唯一约束
-        String code = sendEmailCode(email, "REGISTER");
-        mvc.perform(post("/api/account/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"" + email + "\",\"password\":\"Password123\","
-                    + "\"emailVerificationCode\":\"" + code + "\"}"))
-            .andExpect(ApiTestAssertions.assertOk());
+        // 软删生效（顺带把软删 UPDATE 先刷进库——Hibernate flush 插入先于更新，
+        // 不隔开的话下面的新 INSERT 会撞部分唯一索引）
+        assertThat(accountRepository.findByEmail(email)).isEmpty();
+
+        // when — 同邮箱重建账号 → 不撞唯一约束（注册 HTTP 入口随旧链路拆除，约束本身是 schema 级）
+        accountRepository.save(Account.register(email, null, "hashed-pw-2"));
 
         // then — 新账号建好（旧软删记录仍在，但被部分唯一索引排除）
         assertThat(accountRepository.findByEmail(email)).isPresent();

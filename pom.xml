@@ -110,11 +110,6 @@
             <artifactId>cartisan-openapi</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
-        <dependency>
-            <groupId>com.cartisan</groupId>
-            <artifactId>cartisan-security</artifactId>
-            <version>0.1.0-SNAPSHOT</version>
-        </dependency>
 
         <!-- Security -->
         <dependency>

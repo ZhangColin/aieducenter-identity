@@ -1,19 +1,11 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
 import com.cartisan.test.base.ApiTestAssertions;
 import com.jayway.jsonpath.JsonPath;
-import com.nimbusds.jose.crypto.RSASSAVerifier;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -22,15 +14,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * Account HTTP 黑盒集成测试基类。
  *
  * <p>背靠 {@link IdentityIntegrationTestBase}（Testcontainers 真 PG+Redis），驱动「真实」验证链路：
- * 取图形验证码 → 发短信/邮箱码 → 内存捕获真实码 → 用于注册/登录。不做 service 层 mock。</p>
+ * 取图形验证码 → 发短信/邮箱码 → 内存捕获真实码 → 用于重置密码。不做 service 层 mock。</p>
  */
 abstract class AccountIntegrationTestBase extends IdentityIntegrationTestBase {
 
     private static final String CAPTCHA_KEY_PREFIX = "captcha:";
-
-    /** 身份域 RSA 公钥（验签 access/id JWT，验收②）。 */
-    @Autowired
-    protected RSAKey identityRsaKey;
 
     /** 取一个图形验证码，返回 {id, 真码}（真码从 Redis 读出）。 */
     protected Captcha getCaptcha() throws Exception {
@@ -59,56 +47,6 @@ abstract class AccountIntegrationTestBase extends IdentityIntegrationTestBase {
                 .content("{\"email\":\"" + email + "\",\"purpose\":\"" + purpose + "\"}"))
             .andExpect(ApiTestAssertions.assertOk());
         return capturingMessageSender.lastCodeFor(email);
-    }
-
-    /** 从登录/注册响应中抽取 accessToken。 */
-    protected static String extractAccessToken(MvcResult result) throws Exception {
-        String body = result.getResponse().getContentAsString();
-        return JsonPath.read(body, "$.data.accessToken");
-    }
-
-    /** 从登录/注册响应中抽取 idToken。 */
-    protected static String extractIdToken(MvcResult result) throws Exception {
-        String body = result.getResponse().getContentAsString();
-        return JsonPath.read(body, "$.data.idToken");
-    }
-
-    /** 从登录/注册响应中抽取 refreshToken。 */
-    protected static String extractRefreshToken(MvcResult result) throws Exception {
-        String body = result.getResponse().getContentAsString();
-        return JsonPath.read(body, "$.data.refreshToken");
-    }
-
-    /** 用签名公钥本地验签 JWT（issue #11 验收②），返回解析后的声明集；签名不匹配抛断言错误。 */
-    protected JWTClaimsSet verifyJwtWithPublicKey(String compactJwt) throws Exception {
-        SignedJWT jwt = SignedJWT.parse(compactJwt);
-        if (!jwt.verify(new RSASSAVerifier(identityRsaKey.toRSAPublicKey()))) {
-            throw new AssertionError("JWT 签名验证失败（公钥不匹配/被篡改）");
-        }
-        return jwt.getJWTClaimsSet();
-    }
-
-    /** 读 JWT 头的 alg（base64url 解码头段）。 */
-    protected static String jwtHeaderAlg(String compactJwt) throws Exception {
-        String headerJson = new String(
-            Base64.getUrlDecoder().decode(compactJwt.split("\\.")[0]), StandardCharsets.UTF_8);
-        return JsonPath.read(headerJson, "$.alg");
-    }
-
-    /** 走完整注册流程建一个手机号账号（真实发码验证），供登录/改密/profile 测试复用。 */
-    protected void registerPhoneAccount(String phone, String password) throws Exception {
-        String code = sendSmsCode(phone, "REGISTER", getCaptcha());
-        mvc.perform(post("/api/account/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"phone\":\"" + phone + "\",\"password\":\"" + password + "\","
-                    + "\"smsVerificationCode\":\"" + code + "\"}"))
-            .andExpect(ApiTestAssertions.assertOk());
-    }
-
-    /** 密码登录请求体。 */
-    protected static String loginPasswordBody(String account, String password, Captcha captcha) {
-        return "{\"account\":\"" + account + "\",\"password\":\"" + password + "\","
-            + "\"captchaId\":\"" + captcha.id() + "\",\"captchaCode\":\"" + captcha.code() + "\"}";
     }
 
     private static String smsCodeBody(String phone, String purpose, Captcha captcha) {

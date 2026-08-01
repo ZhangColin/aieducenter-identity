@@ -7,14 +7,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
-import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
-import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
 import com.aieducenter.aieducenteridentity.sso.endpoints.SsoIntegrationTestBase;
 import com.jayway.jsonpath.JsonPath;
 
@@ -27,17 +24,6 @@ import com.jayway.jsonpath.JsonPath;
 class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
 
     private static final String PASSWORD = "Password123";
-
-    @Autowired
-    private AccountRepository accountRepository;
-
-    @Autowired
-    private AccountPasswordEncoderService passwordEncoderService;
-
-    private Long createPhoneAccount(String phone, String password) {
-        Account account = Account.register(null, phone, passwordEncoderService.encodePassword(password));
-        return accountRepository.save(account).getId();
-    }
 
     private String loginBody(String account, String password) {
         return "{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","

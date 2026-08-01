@@ -6,10 +6,11 @@ import java.util.Objects;
  * 登录响应——OIDC 形态的可扩展结构（ADR-0002 / studio bug#4 结构）。
  *
  * <p>{@link #accessToken} + {@link #idToken} 都是 RS256-JWT（issue #11）；{@link #refreshToken} 是不透明串、
- * 服务端 Redis 存、一次性轮换（issue #13）。access JWT 同时作 Sa-Token 会话 token 值（见 {@code AccountTokenAppService}）。</p>
+ * 服务端 Redis 存、一次性轮换（issue #13）。三件套由 {@code TokenIssuerAppService} 签发，仅供 OIDC
+ * {@code /token} 端点返回给消费方 BFF（ADR-0004：token 归 /token）。</p>
  *
- * @param accessToken  访问令牌（RS256-JWT，兼作 Sa-Token 会话 token）
- * @param refreshToken 刷新令牌（不透明串，服务端存）
+ * @param accessToken  访问令牌（RS256-JWT）
+ * @param refreshToken 刷新令牌（不透明串，服务端存，绑 SSO 会话）
  * @param idToken      身份令牌（RS256-JWT，OIDC 声明）
  * @param tokenType    令牌类型（Bearer）
  * @param expiresIn    accessToken 有效期（秒）

@@ -8,21 +8,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.aieducenter.aieducenteridentity.account.application.AccountLoginAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountPasswordAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountProfileAppService;
-import com.aieducenter.aieducenteridentity.account.application.AccountRegistrationAppService;
-import com.aieducenter.aieducenteridentity.account.application.AccountTokenAppService;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ChangePasswordCommand;
-import com.aieducenter.aieducenteridentity.account.application.dto.command.LoginByPasswordCommand;
-import com.aieducenter.aieducenteridentity.account.application.dto.command.LoginBySmsCommand;
-import com.aieducenter.aieducenteridentity.account.application.dto.command.RefreshTokenCommand;
-import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.UpdateProfileCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.response.AccountProfileResponse;
-import com.aieducenter.aieducenteridentity.account.application.dto.response.LoginResponse;
-import com.cartisan.security.annotation.RequireAuth;
 import com.cartisan.web.response.ApiResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,8 +23,8 @@ import jakarta.validation.Valid;
 /**
  * 账号管理 REST API。
  *
- * <p>公开端点（无需登录）：注册 / 密码登录 / 短信码登录 / 重置密码 / 刷新 token。
- * 受保护端点（{@link RequireAuth}，bug#2）：登出 / 修改密码 / 查看·编辑 profile。</p>
+ * <p>公开端点：重置密码（验证码）。受保护端点（SSO 会话过滤器凭 SSO cookie 认人，ADR-0004）：
+ * 修改密码 / 查看·编辑 profile / me。认证入口统一在 {@code /api/auth/*} + OIDC 根端点（sso 上下文）。</p>
  */
 @RestController
 @RequestMapping("/api/account")
@@ -41,54 +32,13 @@ import jakarta.validation.Valid;
 @Tag(name = "Account", description = "账号管理")
 public class AccountController {
 
-    private final AccountRegistrationAppService registrationAppService;
-    private final AccountLoginAppService loginAppService;
     private final AccountPasswordAppService passwordAppService;
     private final AccountProfileAppService profileAppService;
-    private final AccountTokenAppService tokenAppService;
 
-    public AccountController(AccountRegistrationAppService registrationAppService,
-            AccountLoginAppService loginAppService,
-            AccountPasswordAppService passwordAppService,
-            AccountProfileAppService profileAppService,
-            AccountTokenAppService tokenAppService) {
-        this.registrationAppService = registrationAppService;
-        this.loginAppService = loginAppService;
+    public AccountController(AccountPasswordAppService passwordAppService,
+            AccountProfileAppService profileAppService) {
         this.passwordAppService = passwordAppService;
         this.profileAppService = profileAppService;
-        this.tokenAppService = tokenAppService;
-    }
-
-    @PostMapping("/register")
-    @Operation(summary = "注册", description = "邮箱+验证码 或 手机号+验证码（验过才建号），建号后即登录")
-    public ApiResponse<LoginResponse> register(@Valid @RequestBody RegisterCommand command) {
-        return ApiResponse.ok(registrationAppService.register(command));
-    }
-
-    @PostMapping("/login")
-    @Operation(summary = "密码登录", description = "邮箱/手机号 + 密码 + 图形验证码")
-    public ApiResponse<LoginResponse> loginByPassword(@Valid @RequestBody LoginByPasswordCommand command) {
-        return ApiResponse.ok(loginAppService.loginByPassword(command));
-    }
-
-    @PostMapping("/login/sms")
-    @Operation(summary = "短信验证码登录", description = "手机号 + 短信验证码")
-    public ApiResponse<LoginResponse> loginBySms(@Valid @RequestBody LoginBySmsCommand command) {
-        return ApiResponse.ok(loginAppService.loginBySms(command));
-    }
-
-    @PostMapping("/refresh")
-    @Operation(summary = "刷新 token", description = "凭 refresh_token 换新 access + id + refresh（refresh 一次性轮换，凭 refresh_token 本身鉴权）")
-    public ApiResponse<LoginResponse> refresh(@Valid @RequestBody RefreshTokenCommand command) {
-        return ApiResponse.ok(tokenAppService.refresh(command.refreshToken()));
-    }
-
-    @PostMapping("/logout")
-    @RequireAuth
-    @Operation(summary = "登出", description = "清除当前服务端会话")
-    public ApiResponse<Void> logout() {
-        loginAppService.logout();
-        return ApiResponse.ok();
     }
 
     @PostMapping("/reset-password")
@@ -99,8 +49,7 @@ public class AccountController {
     }
 
     @PostMapping("/change-password")
-    @RequireAuth
-    @Operation(summary = "修改密码", description = "验证旧密码后修改，修改后踢出所有会话")
+    @Operation(summary = "修改密码", description = "验证旧密码后修改，修改后踢出所有会话（凭 SSO cookie）")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordCommand command) {
         passwordAppService.changePassword(command);
         return ApiResponse.ok();

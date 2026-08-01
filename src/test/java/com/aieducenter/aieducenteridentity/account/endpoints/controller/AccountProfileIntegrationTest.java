@@ -9,10 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
-import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
-import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
+import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
+import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
-import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.cartisan.test.base.ApiTestAssertions;
 
 import jakarta.servlet.http.Cookie;
@@ -23,26 +22,15 @@ import jakarta.servlet.http.Cookie;
 @org.springframework.transaction.annotation.Transactional
 class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
 
-    private static final String PASSWORD = "Password123";
-
     @Autowired
-    private AccountRepository accountRepository;
+    private ProfileRepository profileRepository;
 
-    @Autowired
-    private SsoSessionRepository ssoSessionRepository;
-
-    @Autowired
-    private SsoProperties ssoProperties;
-
-    /** 注册手机号账号 → 建 SSO 会话 → 返回装入请求用的 SSO cookie。 */
-    private Cookie ssoLoginCookie(String phone) throws Exception {
-        registerPhoneAccount(phone, PASSWORD);
-        Long userId = accountRepository.findByPhone(phone).orElseThrow().getId();
-        SsoSession session = ssoSessionRepository.create(userId, phone);
-        Cookie cookie = new Cookie(ssoProperties.getCookieName(), session.sessionId());
-        cookie.setSecure(true);
-        cookie.setHttpOnly(true);
-        return cookie;
+    /** 直接建号 + profile（注册端点随旧链路拆除，#18 在新链路重建）→ 建 SSO 会话 → 返回 SSO cookie。 */
+    private Cookie ssoLoginCookie(String phone) {
+        Long userId = createPhoneAccount(phone, "unused-pw");
+        profileRepository.save(Profile.create(userId, phone, null));
+        SsoSession session = createSsoSession(userId, phone);
+        return ssoCookie(session.sessionId());
     }
 
     @Test

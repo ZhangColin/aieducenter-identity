@@ -19,52 +19,15 @@ spring:
       ddl-auto: none
     show-sql: false
 
-# Security 拦截配置
+# 服务间签名（机机）
 cartisan:
-  security:
-    interceptor:
-      path-patterns:
-        - "/**"
-      exclude-path-patterns:
-        - "/error"
-        - "/actuator/**"
-        - "/auth/login"
-        - "/auth/captcha"
-        - "/health"
-        - "/swagger-ui/**"
-        - "/api-docs/**"
-        # verification 上下文公开端点（登录前下发/校验验证码，无需鉴权）
-        - "/api/captcha"
-        - "/api/account/verification-code/**"
-        - "/api/account/verify-code"
-        # refresh 端点凭 refresh_token 本身鉴权，无需登录态（issue #13）
-        - "/api/account/refresh"
-        # OIDC/SSO 协议端点（issue #15/#17）：自身走协议鉴权（code/client_secret/access token 验签）或公开，不经 sa-token
-        - "/authorize"
-        - "/token"
-        - "/userinfo"
-        - "/jwks"
-        - "/.well-known/**"
-        - "/api/auth/**"
-        # OIDC RP-initiated 登出（issue #19）：清 SSO 会话+cookie，不经 sa-token
-        - "/logout"
   openapi:
     self:
       app-id: ${OPENAPI_APP_ID:}
       app-secret: ${OPENAPI_APP_SECRET:}
     apikey-service-url: https://openapi.aieducenter.com/api/v1/api-keys/by-appId
 
-# Sa-Token 配置
-sa-token:
-  token-name: Authorization
-  timeout: 604800
-  active-timeout: -1
-  is-concurrent: true
-  is-share: false
-  token-style: uuid
-
 # JWT token 配置（ADR-0002 / issue #11）
-# access JWT 兼作 Sa-Token 会话 token（每次登录用 SaLoginParameter.setTimeout 对齐有效期，故全局 sa-token.timeout 不动）。
 # private-key-path / public-key-path 默认不设 → 内存生成临时密钥（重启失效，prod 必须配 PEM）。
 identity:
   token:
@@ -86,6 +49,7 @@ identity:
     protected-paths:
       - /api/account/me
       - /api/account/profile
+      - /api/account/change-password
     # client 查询 stub（dev/测试便利；真 app-registry 接入在 #6）
     stub-client-id: demo-client
     stub-client-secret: demo-secret-please-change

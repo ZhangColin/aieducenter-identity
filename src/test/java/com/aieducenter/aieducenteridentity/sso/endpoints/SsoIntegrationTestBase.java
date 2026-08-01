@@ -3,9 +3,6 @@ package com.aieducenter.aieducenteridentity.sso.endpoints;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MvcResult;
 
-import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
-import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
-import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
@@ -13,26 +10,13 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 
-import jakarta.servlet.http.Cookie;
-
 /**
  * SSO HTTP 黑盒集成测试基类（issue #15）。
  *
- * <p>背靠 {@link IdentityIntegrationTestBase}（Testcontainers 真 PG+Redis），提供 stub 消费方常量、
- * 建 SSO 会话、构造 SSO cookie、从 302 Location 抽 query 参数等共用助手。</p>
+ * <p>背靠 {@link IdentityIntegrationTestBase}（Testcontainers 真 PG+Redis；stub 消费方常量、建号、
+ * 建 SSO 会话/cookie 由根基类提供），本类补 JWT 验签与 OIDC 响应解析等 SSO 专用助手。</p>
  */
 public abstract class SsoIntegrationTestBase extends IdentityIntegrationTestBase {
-
-    /** stub 预置消费方（{@code SsoProperties} 默认值）。 */
-    protected static final String CLIENT_ID = "demo-client";
-    protected static final String CLIENT_SECRET = "demo-secret-please-change";
-    protected static final String REDIRECT_URI = "https://demo.localhost/auth/callback";
-
-    @Autowired
-    protected SsoSessionRepository sessionRepository;
-
-    @Autowired
-    protected SsoProperties ssoProperties;
 
     /** 身份域 RSA 公钥（验签 access/id JWT）。 */
     @Autowired
@@ -45,19 +29,6 @@ public abstract class SsoIntegrationTestBase extends IdentityIntegrationTestBase
             throw new AssertionError("JWT 签名验证失败（公钥不匹配/被篡改）");
         }
         return jwt.getJWTClaimsSet();
-    }
-
-    /** 建一个 SSO 会话，返回 sessionId（可装入 cookie）。 */
-    protected SsoSession createSsoSession(Long userId, String displayName) {
-        return sessionRepository.create(userId, displayName);
-    }
-
-    /** 构造 SSO cookie。 */
-    protected Cookie ssoCookie(String sessionId) {
-        Cookie cookie = new Cookie(ssoProperties.getCookieName(), sessionId);
-        cookie.setSecure(true);
-        cookie.setHttpOnly(true);
-        return cookie;
     }
 
     /** 从 Set-Cookie 头抽指定 cookie 的值。 */

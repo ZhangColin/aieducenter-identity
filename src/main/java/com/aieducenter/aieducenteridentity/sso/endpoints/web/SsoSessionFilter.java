@@ -20,12 +20,11 @@ import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionReposito
 import com.cartisan.core.context.RequestContext;
 
 /**
- * SSO 会话过滤器——identity 受保护接口的认人入口（替代 {@code @RequireAuth}，ADR-0004）。
+ * SSO 会话过滤器——identity 受保护接口的认人入口（全库唯一，ADR-0004 / issue #21）。
  *
  * <p>流程：读 SSO cookie → {@link SsoSessionRepository#findActive}（命中则滑动续期）→
  * 有效则用 {@link RequestContext#run} 绑定 {@code userId/displayName} 到 RequestContext 供下游读取；
- * 无有效会话且请求受保护路径 → 401。order = {@code HIGHEST_PRECEDENCE + 6}，紧随 cartisan
- * {@code SecurityFilter}（+5）：sa-token 未登录时 SecurityFilter 不绑定 context，本过滤器接管绑定。</p>
+ * 无有效会话且请求受保护路径 → 401。cartisan-security 移除后，RequestContext 只此一处绑定。</p>
  *
  * <p><b>注册</b>：经 {@code SsoWebConfig} 的 {@code FilterRegistrationBean} 注册（非 {@code @Component}），
  * 以免被 {@code @WebMvcTest} 切片扫描到（其依赖的 SsoSessionRepository 不在切片内）。</p>
@@ -34,7 +33,7 @@ import com.cartisan.core.context.RequestContext;
  */
 public class SsoSessionFilter extends OncePerRequestFilter {
 
-    /** 紧随 cartisan SecurityFilter（{@code HIGHEST_PRECEDENCE + 5}）之后绑定 RequestContext。 */
+    /** 尽早绑定 RequestContext（历史上紧随 cartisan SecurityFilter +5 之后，现为其唯一绑定来源）。 */
     public static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 6;
 
     private static final String UNAUTHORIZED_BODY = "{\"code\":401,\"message\":\"未登录或会话已过期\"}";

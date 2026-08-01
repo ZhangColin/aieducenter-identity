@@ -12,8 +12,7 @@ import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
 /**
  * {@link SsoSessionFilter} 集成测试——受保护路径无 SSO 会话 → 401；非受保护路径放行（issue #15）。
  *
- * <p>「有效会话绑定 context + 放行」的端到端验证在 {@code SsoFlowIntegrationTest}（me/profile 去掉
- * {@code @RequireAuth} 之后）。</p>
+ * <p>「有效会话绑定 context + 放行」的端到端验证在 {@code SsoFlowIntegrationTest}（me/profile 凭 SSO cookie 认人）。</p>
  */
 class SsoSessionFilterTest extends IdentityIntegrationTestBase {
 
