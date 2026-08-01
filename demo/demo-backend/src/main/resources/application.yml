@@ -1,0 +1,14 @@
+server:
+  port: 10010
+
+spring:
+  application:
+    name: aieducenter-demo-bff
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

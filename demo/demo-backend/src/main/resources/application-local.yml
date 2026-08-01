@@ -1,0 +1,7 @@
+sso:
+  issuer: http://identity.localhost:10001
+  client-id: demo-client
+  client-secret: demo-secret-please-change
+  redirect-uri: http://demo.localhost:3000/auth/callback
+  scope: openid profile
+  app-base-url: http://demo.localhost:3000
