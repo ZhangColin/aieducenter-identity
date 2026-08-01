@@ -57,7 +57,7 @@ class SsoTokenAppServiceTest {
         when(secretVerifier.matches(SECRET, "hash")).thenReturn(true);
         when(accountRepository.findById(USER_ID)).thenReturn(Optional.of(
             Account.restore(USER_ID, "u@test.com", null, "pwhash", AccountStatus.ACTIVE, false, null)));
-        when(tokenIssuer.issue(any(), any(), any())).thenReturn(
+        when(tokenIssuer.issue(any(), any(), any(), any())).thenReturn(
             LoginResponse.of("access-jwt", "refresh-jwt", "id-jwt", 900));
     }
 
@@ -75,8 +75,8 @@ class SsoTokenAppServiceTest {
         assertThat(response.idToken()).isEqualTo("id-jwt");
         assertThat(response.refreshToken()).isEqualTo("refresh-jwt");
         assertThat(response.tokenType()).isEqualTo("Bearer");
-        // nonce 透传给 TokenIssuerAppService 写入 id_token
-        verify(tokenIssuer).issue(any(), any(), eq(NONCE));
+        // nonce 透传给 TokenIssuerAppService 写入 id_token；scope 透传写入 access_token（issue #17）
+        verify(tokenIssuer).issue(any(), any(), eq(NONCE), eq("openid"));
     }
 
     @Test
@@ -143,8 +143,8 @@ class SsoTokenAppServiceTest {
 
         assertThat(response.accessToken()).isEqualTo("access-jwt");
         assertThat(response.refreshToken()).isEqualTo("refresh-jwt");
-        // refresh grant 无 nonce
-        verify(tokenIssuer).issue(any(), any(), eq(null));
+        // refresh grant 无 nonce / 无 scope（scope 留在 code grant，refresh 不携带）
+        verify(tokenIssuer).issue(any(), any(), eq(null), eq(null));
     }
 
     @Test

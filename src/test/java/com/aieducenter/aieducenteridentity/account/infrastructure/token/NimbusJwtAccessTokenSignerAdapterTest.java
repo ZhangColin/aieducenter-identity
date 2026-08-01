@@ -39,7 +39,8 @@ class NimbusJwtAccessTokenSignerAdapterTest {
         Instant iat = Instant.now();
         Instant exp = iat.plusSeconds(900);
         AccessTokenClaims claims = new AccessTokenClaims(
-            "https://identity.test", "user-123", List.of("aieducenter-identity"), iat, exp, "jti-abc");
+            "https://identity.test", "user-123", List.of("aieducenter-identity"), iat, exp, "jti-abc",
+            "openid profile email");
 
         String jwt = adapter.sign(claims);
 
@@ -58,6 +59,8 @@ class NimbusJwtAccessTokenSignerAdapterTest {
         assertThat(parsedClaims.getSubject()).isEqualTo("user-123");
         assertThat(parsedClaims.getAudience()).containsExactly("aieducenter-identity");
         assertThat(parsedClaims.getJWTID()).isEqualTo("jti-abc");
+        // scope 以空格分隔串写入（issue #17，/userinfo 据此过滤资料）
+        assertThat(parsedClaims.getStringClaim("scope")).isEqualTo("openid profile email");
         // iat/exp 用 epoch 秒写入；nimbus 识别为注册时间声明，回读为 Date（NumericDate）
         assertThat(parsedClaims.getIssueTime().toInstant().getEpochSecond()).isEqualTo(iat.getEpochSecond());
         assertThat(parsedClaims.getExpirationTime().toInstant().getEpochSecond()).isEqualTo(exp.getEpochSecond());
@@ -67,7 +70,7 @@ class NimbusJwtAccessTokenSignerAdapterTest {
     void given_tampered_payload_when_verify_then_signature_invalid() throws Exception {
         String jwt = adapter.sign(new AccessTokenClaims(
             "https://identity.test", "user-123", List.of("aud"), Instant.now(),
-            Instant.now().plusSeconds(60), "jti"));
+            Instant.now().plusSeconds(60), "jti", null));
 
         // 翻转 payload（中段）一字节 → 签名必然不匹配
         String[] parts = jwt.split("\\.", 3);
@@ -89,7 +92,7 @@ class NimbusJwtAccessTokenSignerAdapterTest {
             new NimbusJwtAccessTokenSignerAdapter(new NimbusJwtSupport(otherKey));
         String jwt = otherAdapter.sign(new AccessTokenClaims(
             "https://identity.test", "user-123", List.of("aud"), Instant.now(),
-            Instant.now().plusSeconds(60), "jti"));
+            Instant.now().plusSeconds(60), "jti", null));
 
         boolean verified = SignedJWT.parse(jwt).verify(new RSASSAVerifier(rsaKey.toRSAPublicKey()));
         assertThat(verified).isFalse();

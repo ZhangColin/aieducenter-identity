@@ -39,9 +39,12 @@ cartisan:
         - "/api/account/verify-code"
         # refresh 端点凭 refresh_token 本身鉴权，无需登录态（issue #13）
         - "/api/account/refresh"
-        # OIDC/SSO 协议端点（issue #15）：自身走协议鉴权（code/client_secret）或公开，不经 sa-token
+        # OIDC/SSO 协议端点（issue #15/#17）：自身走协议鉴权（code/client_secret/access token 验签）或公开，不经 sa-token
         - "/authorize"
         - "/token"
+        - "/userinfo"
+        - "/jwks"
+        - "/.well-known/**"
         - "/api/auth/**"
   openapi:
     self:

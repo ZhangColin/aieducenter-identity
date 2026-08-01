@@ -51,14 +51,14 @@ public class TokenIssuerAppService {
     }
 
     /**
-     * 为已认证账号签发 access + id JWT + 不透明 refresh（nonce 不回带，非授权码流）。
+     * 为已认证账号签发 access + id JWT + 不透明 refresh（nonce/scope 不带，非授权码流）。
      *
      * @param account 已通过身份验证的账号
      * @param profile 账号个人资料（可空）
      * @return 登录响应（access + refresh + id 三 token）
      */
     public LoginResponse issue(Account account, Profile profile) {
-        return issue(account, profile, null);
+        return issue(account, profile, null, null);
     }
 
     /**
@@ -70,13 +70,29 @@ public class TokenIssuerAppService {
      * @return 登录响应（access + refresh + id 三 token）
      */
     public LoginResponse issue(Account account, Profile profile, String nonce) {
+        return issue(account, profile, nonce, null);
+    }
+
+    /**
+     * 为已认证账号签发三件套；OIDC {@code /token}（授权码流）传 nonce（写 id_token）+ scope（写 access_token）。
+     *
+     * <p>scope 进 access_token，供 {@code /userinfo} 按授权范围过滤返回的 profile/email/phone 资料（issue #17）。
+     * 非授权码流（login/register/refresh）传 null——access_token 不带 scope，{@code /userinfo} 仅返回 {@code sub}。</p>
+     *
+     * @param account 已通过身份验证的账号
+     * @param profile 账号个人资料（可空——取 nickname/avatar 进 id_token）
+     * @param nonce   OIDC nonce（/authorize 透传；非授权码流传 null）
+     * @param scope   授权范围（空格分隔串；授权码流来自 code 绑定，非授权码流传 null）
+     * @return 登录响应（access + refresh + id 三 token）
+     */
+    public LoginResponse issue(Account account, Profile profile, String nonce, String scope) {
         long accessTtl = properties.getAccessTtlSeconds();
         Instant iat = Instant.now();
         Instant exp = iat.plusSeconds(accessTtl);
         String userId = String.valueOf(account.getId());
 
         String accessJwt = accessTokenSigner.sign(new AccessTokenClaims(
-            properties.getIssuer(), userId, properties.getAudiences(), iat, exp, newJti()));
+            properties.getIssuer(), userId, properties.getAudiences(), iat, exp, newJti(), scope));
         String idJwt = idTokenSigner.sign(buildIdClaims(account, profile, userId, iat, exp, nonce));
 
         // 不透明 refresh_token 服务端存（轮换用）。

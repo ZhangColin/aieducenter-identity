@@ -3,12 +3,14 @@ package com.aieducenter.aieducenteridentity.sso.domain.error;
 import com.cartisan.core.exception.CodeMessage;
 
 /**
- * OIDC 标准错误码（RFC 6749 §5.2 / OIDC Core）——{@code /authorize} 与 {@code /token} 错误响应用。
+ * OIDC 标准错误码（RFC 6749 §5.2 / RFC 6750 / OIDC Core）——{@code /authorize}、{@code /token}、
+ * {@code /userinfo} 错误响应用。
  *
  * <p>实现 {@link CodeMessage}（架构守护：domain 枚举须实现 BaseEnum 或 CodeMessage；OIDC 错误码为字符串、
  * 走 {@code {error, error_description}} 形态，故选 CodeMessage 而非 Integer 的 BaseEnum）。
- * {@code /token} 错 → 400/401 + {@code {error, error_description}}；{@code /authorize} 重定向前错
- * （client/redirect_uri 无效）→ 不重定向、返回错误（防开放重定向）。</p>
+ * {@code /token} 错 → 400/401 + {@code {error, error_description}}；{@code /userinfo} 凭证无效 → 401
+ * {@code invalid_token}（RFC 6750）；{@code /authorize} 重定向前错（client/redirect_uri 无效）→ 不重定向、
+ * 返回错误（防开放重定向）。</p>
  *
  * @since 0.1.0
  */
@@ -25,7 +27,9 @@ public enum SsoError implements CodeMessage {
     /** 授权码/refresh_token 非法、已用、过期、或不属于该 client。 */
     INVALID_GRANT("invalid_grant", 400, "授权凭证无效或已过期"),
     /** 不支持的 grant_type。 */
-    UNSUPPORTED_GRANT_TYPE("unsupported_grant_type", 400, "不支持的 grant_type");
+    UNSUPPORTED_GRANT_TYPE("unsupported_grant_type", 400, "不支持的 grant_type"),
+    /** access token 无效/过期/验签失败——/userinfo 用，401（RFC 6750）。 */
+    INVALID_TOKEN("invalid_token", 401, "访问令牌无效或已过期");
 
     private final String code;
     private final int httpStatus;

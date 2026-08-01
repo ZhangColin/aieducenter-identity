@@ -88,7 +88,8 @@ public class SsoTokenAppService {
         Account account = loadAccount(payload.userId());
         ensureUsable(account);
         Profile profile = profileRepository.findById(payload.userId()).orElse(null);
-        LoginResponse issued = tokenIssuer.issue(account, profile, payload.nonce());
+        // scope 透传进 access_token，供 /userinfo 按授权范围过滤返回资料（issue #17）
+        LoginResponse issued = tokenIssuer.issue(account, profile, payload.nonce(), payload.scope());
         return toResponse(issued);
     }
 
@@ -101,7 +102,8 @@ public class SsoTokenAppService {
         Account account = loadAccount(userId);
         ensureUsable(account);
         Profile profile = profileRepository.findById(userId).orElse(null);
-        LoginResponse issued = tokenIssuer.issue(account, profile, null);
+        // refresh 不携带 nonce/scope（scope 仅授权码流从 code 绑定带入；refresh 绑 SSO 会话留 #19）
+        LoginResponse issued = tokenIssuer.issue(account, profile, null, null);
         return toResponse(issued);
     }
 

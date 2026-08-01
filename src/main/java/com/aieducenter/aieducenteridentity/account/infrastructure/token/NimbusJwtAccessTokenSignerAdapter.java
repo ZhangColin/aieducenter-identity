@@ -28,14 +28,16 @@ public class NimbusJwtAccessTokenSignerAdapter implements AccessTokenSigner {
 
     @Override
     public String sign(AccessTokenClaims claims) {
-        JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
             .issuer(claims.iss())
             .subject(claims.sub())
             .audience(claims.aud())
             .claim("iat", claims.iat().getEpochSecond())
             .claim("exp", claims.exp().getEpochSecond())
-            .jwtID(claims.jti())
-            .build();
-        return support.sign(claimsSet);
+            .jwtID(claims.jti());
+        if (claims.scope() != null && !claims.scope().isBlank()) {
+            builder.claim("scope", claims.scope());
+        }
+        return support.sign(builder.build());
     }
 }

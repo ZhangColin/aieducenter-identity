@@ -45,12 +45,18 @@ class TokenControllerIntegrationTest extends SsoIntegrationTestBase {
 
     /** 走 /authorize 拿一个真实 code（建会话 + cookie + 二次免登发 code）。 */
     private String obtainCode(Long userId) throws Exception {
+        return obtainCode(userId, null);
+    }
+
+    /** 走 /authorize 拿一个真实 code，可带 scope（透传进 code → access token）。 */
+    private String obtainCode(Long userId, String scope) throws Exception {
         SsoSession session = createSsoSession(userId, "用户");
         MvcResult result = mvc.perform(get("/authorize")
                 .param("client_id", CLIENT_ID)
                 .param("redirect_uri", REDIRECT_URI)
                 .param("state", "st")
                 .param("nonce", NONCE)
+                .param("scope", scope)
                 .cookie(ssoCookie(session.sessionId())))
             .andExpect(status().isFound())
             .andReturn();
@@ -85,6 +91,19 @@ class TokenControllerIntegrationTest extends SsoIntegrationTestBase {
         assertThat(idClaims.getSubject()).isEqualTo(String.valueOf(userId));
         // access JWT 亦可用公钥验签
         verifyJwtWithPublicKey(JsonPath.read(body, "$.access_token"));
+    }
+
+    @Test
+    void given_code_grant_with_scope_when_token_then_access_token_carries_scope() throws Exception {
+        Long userId = createAccount("13900112010");
+        String code = obtainCode(userId, "openid profile email phone");
+
+        MvcResult result = exchangeCode(code);
+        String accessToken = JsonPath.read(result.getResponse().getContentAsString(), "$.access_token");
+
+        // access JWT 带 scope claim（/userinfo 据此过滤返回资料，issue #17）
+        JWTClaimsSet accessClaims = verifyJwtWithPublicKey(accessToken);
+        assertThat(accessClaims.getStringClaim("scope")).isEqualTo("openid profile email phone");
     }
 
     @Test
