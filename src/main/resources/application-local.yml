@@ -9,3 +9,14 @@ spring:
       port: 6379
 
 spring.jpa.show-sql: true
+
+# 本地联调（issue #16）：.localhost 多域 + dev 一键登兜登录页（identity-web 未建）
+identity:
+  sso:
+    # identity-web 登录页缺席 → /authorize 无 cookie 跳 identity 自己的 dev 一键登
+    login-page-url: http://identity.localhost:10001/api/auth/dev-login
+    # 放行 demo 浏览器入口（Next 代理到 demo-backend :10010）
+    stub-redirect-uris:
+      - http://demo.localhost:3000/auth/callback
+    dev-login:
+      enabled: true
