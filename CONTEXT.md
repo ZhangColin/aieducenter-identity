@@ -103,8 +103,9 @@ POST /api/auth/login {client_id, redirect_uri, state, nonce, credentials}
 
 ## 开发测试
 
-- **本地**：`.localhost` 多域（identity.localhost + demo.localhost）——浏览器自动解析到 127.0.0.1 + 当 secure context，免改 hosts、免证书。
-- **demo 消费方**（demo.localhost）：发起 /authorize + 收 callback + BFF 换 token + 显示用户。一身三任：**测试必需品 + 对接活示例 + 演示开发姿态**。
+- **本地**：`.localhost` 多域——浏览器自动解析到 127.0.0.1 + 当 secure context（免改 hosts、免证书）。端口：identity `identity.localhost:10001`、demo BFF `demo.localhost:10010`、demo-web `demo.localhost:3000`（Next 代理 `/api`·`/auth`→BFF）。一键起：`./dev-up.sh`（PG+Redis+三进程命令）；手册 `docs/guide/local-sso-debugging.md`。
+- **demo 消费方**（仓内 `demo/`：`demo-backend` BFF + `demo-web`）：发起 /authorize + 收 callback + BFF 换 token（内存存、浏览器不接触）+ 显示用户。一身三任：**测试必需品 + 对接活示例 + 演示开发姿态**。
+- **dev 一键登**（identity-web 登录页缺席时的兜底，#16）：`identity.sso.dev-login.enabled=true`（local profile）时，`/authorize` 无 cookie 跳 `/api/auth/dev-login`，自动登预置账号 `demo@aieducenter.com`、发 code。仍走正常 code→/token 流程（不直接发 token）。identity-web 登录页落地后，把 local 的 `login-page-url` 换回登录页即可。
 - **dev SSO 环境**（identity.dev.aieducenter.com）：真实 OIDC；redirect_uri 放行 `localhost:*`；预置测试账号 + 一键快速登录；跳过验证码/短信实发。**不做「指定 userId 直接发 token」捷径**。
 - **消费方认证解耦**：业务代码只认「当前登录用户」抽象；姿态 A 连 dev SSO（主线）/ 姿态 B 本地 mock（兜底，消费方自写，不给 mock 端点）。
 
