@@ -47,14 +47,17 @@ GET /authorize：验 client_id/redirect_uri/state → 看 SSO cookie
   有 cookie → 发 code, 302 回 redirect_uri?code&state          ← 二次 SSO
   无 cookie → 302 到登录页(透传 authorize 参数)
 POST /api/auth/login {client_id, redirect_uri, state, nonce, scope, account, password}
-  → 验凭据 → 建 SSO 会话 + 种 cookie → 发 code → 302 回 redirect_uri?code&state
+  → 验凭据 → 建 SSO 会话 + 种 cookie → 发 code → 回 redirect_uri?code&state
 POST /api/auth/login-code {同 authorize 透传 + account + code}
-  → 验验证码(purpose=LOGIN) → 定位账号 → 建 SSO 会话 + 种 cookie → 发 code → 302
+  → 验验证码(purpose=LOGIN) → 定位账号 → 建 SSO 会话 + 种 cookie → 发 code → 同上
 POST /api/auth/register {同 authorize 透传 + email/phone + emailCode/phoneCode + password?}
   → 唯一性校验 → 当场验码(purpose=REGISTER) → 建号 → 注册即登录（同 login 后半段）
 ```
 发 code 各处共用一个方法（login/register/login-code 经 SsoLoginCompletionAppService 统一后半段）；不引入 ticket/interactionId（最简方案）。scope 全链路透传（登录页 URL → login/login-code/register → 发码绑 code，#25）——首次登录与二次免登同参时 token scope/声明一致。
-login/login-code/register 同时吃 **JSON 与 form-urlencoded**（#23）——identity-web 用原生 form 顶层提交，SSO 跨站全链路保持「后端 302 + 浏览器导航、零跨域 fetch」（SPA fetch 会自动跟 302 且拿不到 Location，跨域跟随被 CORS 拦死）。form 字段名与 JSON 相同（camelCase：`clientId`/`redirectUri`/`state`/`nonce`/`scope`；form 只是编码差异，不是新契约——区别于 /authorize URL 参数的 snake_case）。
+login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响应按提交方式分流**（#26）：
+- **JSON 变体 = `200 {redirectUrl}`**——identity-web 登录/注册页是前后端分离 SPA：fetch POST JSON（同源，经 Next rewrite 代理），成功读体后 `window.location.href` 顶层导航回业务应用。不能回 302：fetch 会自动跟随、跨域跟随被 CORS 拦死（`redirect:'manual'` 也只拿到读不出 Location 的 opaqueredirect）。
+- **form 变体 = `302 + Location`**——浏览器原生 form 顶层提交自然跟随（#23，无 JS 兜底保留）。
+两变体同一 service、同一契约字段（camelCase：`clientId`/`redirectUri`/`state`/`nonce`/`scope`；form 只是编码差异，不是新契约——区别于 /authorize URL 参数的 snake_case）；Set-Cookie 种 SSO 会话两变体一致；失败响应（401/409/CODE_INVALID/400 `{error,error_description}`）两变体一致、不随提交方式变化。SSO 跨站链路不变式保持「跨站最后一跳 = 浏览器顶层导航、零跨域 fetch」（fetch 仅同源）。
 验证码复用 verification 上下文：**purpose 分键**（REGISTER/LOGIN/RESET_PASSWORD，Redis key = 联络方式:用途），注册码与登录码互不串用；发码走 `/api/account/verification-code/*` 公开端点带 purpose。login-code **防用户枚举**：「账号不存在」与「验证码错误」同一响应（错码由 verification 抛 CODE_INVALID；验码通过但账号不存在补抛同一 CODE_INVALID），停用/锁定在验码通过后才告知。
 
 ### Account（账号 / 终端用户）

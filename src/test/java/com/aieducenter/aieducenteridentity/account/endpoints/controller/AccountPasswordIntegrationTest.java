@@ -30,13 +30,13 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
         return ssoCookie(session.sessionId());
     }
 
-    /** 新密码能登录 = SSO 密码登录 302 发 code（唯一认证入口 /api/auth/login）。 */
+    /** 新密码能登录 = SSO 密码登录 200 {redirectUrl} 发 code（唯一认证入口 /api/auth/login，#26）。 */
     private void assertPasswordLoginWorks(String account, String password) throws Exception {
         mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"account\":\"" + account + "\",\"password\":\"" + password + "\"}"))
-            .andExpect(status().isFound());
+            .andExpect(status().isOk());
     }
 
     // ── 重置密码 ──────────────────────────────────────────────────────────────

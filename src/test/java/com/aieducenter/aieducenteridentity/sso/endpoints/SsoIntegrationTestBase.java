@@ -70,6 +70,14 @@ public abstract class SsoIntegrationTestBase extends IdentityIntegrationTestBase
         return JsonPath.read(result.getResponse().getContentAsString(), "$.error");
     }
 
+    /**
+     * 从 200 JSON 响应体读 redirectUrl（issue #26：/api/auth/* JSON 变体成功 = 200 {redirectUrl}，
+     * 值与原 302 Location 一致，即 {@code redirect_uri?code&state}）。
+     */
+    protected static String redirectUrl(MvcResult result) throws java.io.UnsupportedEncodingException {
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.redirectUrl");
+    }
+
     /** 发邮箱验证码（verification 上下文公开端点），返回消息捕获器拿到的真实码。 */
     protected String sendEmailCode(String email, String purpose) throws Exception {
         mvc.perform(post("/api/account/verification-code/email")

@@ -74,19 +74,19 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
         assertThat(queryParam(auth1, "state")).isEqualTo(STATE);
         assertThat(queryParam(auth1, "nonce")).isEqualTo(NONCE);
 
-        // 2. /api/auth/login 密码登录 → Set-Cookie(SSO) + 302 redirect_uri?code&state
+        // 2. /api/auth/login 密码登录（JSON）→ Set-Cookie(SSO) + 200 {redirectUrl: redirect_uri?code&state}（#26）
         MvcResult login = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody()))
-            .andExpect(status().isFound())
+            .andExpect(status().isOk())
             .andExpect(header().exists("Set-Cookie"))
-            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
+            .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
             .andReturn();
         String sessionId = extractCookieValue(login, ssoProperties.getCookieName());
         ssoCookieHolder[0] = new Cookie(ssoProperties.getCookieName(), sessionId);
-        String code1 = queryParam(login, "code");
+        String code1 = queryParam(redirectUrl(login), "code");
         assertThat(code1).isNotBlank();
-        assertThat(queryParam(login, "state")).isEqualTo(STATE);
+        assertThat(queryParam(redirectUrl(login), "state")).isEqualTo(STATE);
 
         // 3. /token code grant → access/id/refresh；id_token 含 nonce + 公钥验签通过
         MvcResult token = mvc.perform(post("/token")
@@ -145,18 +145,18 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
             .andReturn();
         assertThat(queryParam(auth1, "scope")).isEqualTo(scope);
 
-        // 2. 首次登录带 scope → code 换 token：access_token 绑请求 scope、id_token 出 email/phone 声明
+        // 2. 首次登录带 scope（JSON 成功 200 {redirectUrl}，#26）→ code 换 token：access_token 绑请求 scope、id_token 出 email/phone 声明
         MvcResult login = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"" + STATE + "\",\"nonce\":\"" + NONCE + "\",\"scope\":\"" + scope + "\","
                     + "\"account\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}"))
-            .andExpect(status().isFound())
+            .andExpect(status().isOk())
             .andReturn();
         Cookie ssoCookie = new Cookie(ssoProperties.getCookieName(),
             extractCookieValue(login, ssoProperties.getCookieName()));
 
-        MvcResult token1 = exchangeCode(queryParam(login, "code"));
+        MvcResult token1 = exchangeCode(queryParam(redirectUrl(login), "code"));
         JWTClaimsSet access1 = verifyJwtWithPublicKey(JsonPath.read(token1.getResponse().getContentAsString(), "$.access_token"));
         JWTClaimsSet id1 = verifyJwtWithPublicKey(JsonPath.read(token1.getResponse().getContentAsString(), "$.id_token"));
         assertThat(access1.getStringClaim("scope")).isEqualTo(scope);
@@ -201,8 +201,8 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
         MvcResult login = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody()))
-            .andExpect(status().isFound()).andReturn();
-        String code = queryParam(login, "code");
+            .andExpect(status().isOk()).andReturn();
+        String code = queryParam(redirectUrl(login), "code");
 
         // 首次换 token 成功
         mvc.perform(post("/token").contentType(MediaType.APPLICATION_FORM_URLENCODED)

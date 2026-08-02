@@ -16,9 +16,10 @@ import com.aieducenter.aieducenteridentity.sso.endpoints.SsoIntegrationTestBase;
 import com.jayway.jsonpath.JsonPath;
 
 /**
- * {@code POST /api/auth/login} HTTP 黑盒集成测试（issue #15 AC）。
+ * {@code POST /api/auth/login} HTTP 黑盒集成测试（issue #15、#26 AC）。
  *
- * <p>覆盖：登录成功（Set-Cookie + 302 code&state）、错密码 401、未知账号同 401（防枚举）、停用账号 401。</p>
+ * <p>覆盖：JSON 登录成功（Set-Cookie + 200 {redirectUrl} 带 code&state）、错密码 401、
+ * 未知账号同 401（防枚举）、停用账号 401；form 变体成功保持 302 + Location。</p>
  */
 @Transactional
 class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
@@ -36,11 +37,12 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
         String phone = "13900111001";
         createPhoneAccount(phone, PASSWORD);
 
+        // JSON 变体成功 = 200 + {redirectUrl}（issue #26，SPA fetch 读体后自行顶层导航；不带 Location）
         MvcResult result = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody(phone, PASSWORD)))
-            .andExpect(status().isFound())
-            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
             .andReturn();
 
         // 种 SSO cookie（httpOnly + Secure + SameSite=Lax）
@@ -50,9 +52,10 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
         assertThat(setCookie).contains("HttpOnly");
         assertThat(setCookie).contains("SameSite=Lax");
 
-        String location = result.getResponse().getHeader("Location");
-        assertThat(queryParam(location, "code")).isNotBlank();
-        assertThat(queryParam(location, "state")).isEqualTo("st");
+        assertThat(result.getResponse().getHeader("Location")).isNull();
+        String url = redirectUrl(result);
+        assertThat(queryParam(url, "code")).isNotBlank();
+        assertThat(queryParam(url, "state")).isEqualTo("st");
     }
 
     @Test
@@ -101,7 +104,8 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
         String phone = "13900111004";
         createPhoneAccount(phone, PASSWORD);
 
-        // identity-web 原生 form 顶层提交（issue #23）——与 JSON 同一契约：302 + cookie + code&state
+        // identity-web 原生 form 顶层提交（issue #23）——form 变体成功保持 302 + cookie + code&state
+        // （JSON 变体成功为 200 {redirectUrl}，issue #26）
         MvcResult result = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)

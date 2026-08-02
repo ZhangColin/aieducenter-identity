@@ -17,11 +17,11 @@ import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.JWTClaimsSet;
 
 /**
- * {@code POST /api/auth/login-code} HTTP 黑盒集成测试（issue #22 AC）。
+ * {@code POST /api/auth/login-code} HTTP 黑盒集成测试（issue #22、#26 AC）。
  *
- * <p>覆盖：验证码登录全链路（发 LOGIN 码 → 验码 → Set-Cookie + 302 code&state → /token 换 token）、
- * 无密码账号可登、错码与「账号不存在 + 正确码」同一响应（防枚举）、停用账号 401、
- * 手机通道 + form 提交、client/redirect_uri 无效不重定向。</p>
+ * <p>覆盖：验证码登录全链路（发 LOGIN 码 → 验码 → Set-Cookie + JSON 200 {redirectUrl} 带 code&state →
+ * /token 换 token）、无密码账号可登、错码与「账号不存在 + 正确码」同一响应（防枚举）、停用账号 401、
+ * 手机通道 + form 提交（成功保持 302 + Location）、client/redirect_uri 无效不重定向。</p>
  */
 @Transactional
 class LoginCodeControllerIntegrationTest extends SsoIntegrationTestBase {
@@ -39,11 +39,12 @@ class LoginCodeControllerIntegrationTest extends SsoIntegrationTestBase {
         createEmailAccount(EMAIL, "Password123");
         String code = sendEmailCode(EMAIL, "LOGIN");
 
+        // JSON 变体成功 = 200 + {redirectUrl}（issue #26；不带 Location）
         MvcResult result = mvc.perform(post("/api/auth/login-code")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginCodeBody(EMAIL, code)))
-            .andExpect(status().isFound())
-            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
             .andReturn();
 
         String setCookie = result.getResponse().getHeader("Set-Cookie");
@@ -51,8 +52,10 @@ class LoginCodeControllerIntegrationTest extends SsoIntegrationTestBase {
         assertThat(setCookie).startsWith(ssoProperties.getCookieName() + "=");
         assertThat(setCookie).contains("HttpOnly");
         assertThat(setCookie).contains("SameSite=Lax");
-        assertThat(queryParam(result, "code")).isNotBlank();
-        assertThat(queryParam(result, "state")).isEqualTo("st");
+        assertThat(result.getResponse().getHeader("Location")).isNull();
+        String url = redirectUrl(result);
+        assertThat(queryParam(url, "code")).isNotBlank();
+        assertThat(queryParam(url, "state")).isEqualTo("st");
         assertThat(accountRepository.findByEmail(EMAIL).orElseThrow().getLastLoginAt()).isNotNull();
     }
 
@@ -65,8 +68,8 @@ class LoginCodeControllerIntegrationTest extends SsoIntegrationTestBase {
         mvc.perform(post("/api/auth/login-code")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginCodeBody(EMAIL, code)))
-            .andExpect(status().isFound())
-            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
     }
 
     @Test
@@ -78,14 +81,14 @@ class LoginCodeControllerIntegrationTest extends SsoIntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"st\",\"scope\":\"openid email\",\"account\":\"" + EMAIL + "\",\"code\":\"" + code + "\"}"))
-            .andExpect(status().isFound())
+            .andExpect(status().isOk())
             .andReturn();
 
         // login-code 发出的 code 能在 /token 正常换 token（与 login/register 同一发码契约）
         MvcResult token = mvc.perform(post("/token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("grant_type", "authorization_code")
-                .param("code", queryParam(login, "code"))
+                .param("code", queryParam(redirectUrl(login), "code"))
                 .param("redirect_uri", REDIRECT_URI)
                 .param("client_id", CLIENT_ID)
                 .param("client_secret", CLIENT_SECRET))
@@ -148,7 +151,7 @@ class LoginCodeControllerIntegrationTest extends SsoIntegrationTestBase {
         createPhoneAccount(PHONE, "Password123");
         String code = sendSmsCode(PHONE, "LOGIN");
 
-        // identity-web 原生 form 顶层提交（issue #23）——与 JSON 同一契约
+        // identity-web 原生 form 顶层提交（issue #23）——form 变体成功保持 302（JSON 变体为 200 {redirectUrl}，#26）
         MvcResult result = mvc.perform(post("/api/auth/login-code")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)

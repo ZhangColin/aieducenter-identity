@@ -18,11 +18,12 @@ import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.JWTClaimsSet;
 
 /**
- * {@code POST /api/auth/register} HTTP 黑盒集成测试（issue #18、#22 AC）。
+ * {@code POST /api/auth/register} HTTP 黑盒集成测试（issue #18、#22、#26 AC）。
  *
- * <p>覆盖：注册成功（当场验码 + 建号 + Set-Cookie + 302 code&state）、注册即登录（code 能换 token、
- * 同凭据可再登录）、验不过/缺码不建号、密码可选（不设密码 → 密码登录 401、login-code 可登）、
- * email/phone 重复 409、联络方式缺失/格式错 400、client/redirect_uri 无效不重定向。</p>
+ * <p>覆盖：注册成功（当场验码 + 建号 + Set-Cookie + JSON 200 {redirectUrl} 带 code&state）、
+ * 注册即登录（code 能换 token、同凭据可再登录）、验不过/缺码不建号、密码可选（不设密码 →
+ * 密码登录 401、login-code 可登）、email/phone 重复 409、联络方式缺失/格式错 400、
+ * client/redirect_uri 无效不重定向；form 变体成功保持 302 + Location。</p>
  */
 @Transactional
 class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
@@ -57,11 +58,12 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     void given_new_email_with_code_when_register_then_account_created_and_redirect_with_code() throws Exception {
         String emailCode = sendEmailCode(EMAIL, "REGISTER");
 
+        // JSON 变体成功 = 200 + {redirectUrl}（issue #26；不带 Location）
         MvcResult result = mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, emailCode, null, PASSWORD)))
-            .andExpect(status().isFound())
-            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
             .andReturn();
 
         // 建号：email 落库 + 密码 hash（非明文）+ 注册即登录（lastLoginAt 已记）
@@ -69,14 +71,16 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         assertThat(account.getPasswordHash()).isNotBlank().isNotEqualTo(PASSWORD);
         assertThat(account.getLastLoginAt()).isNotNull();
 
-        // 种 SSO cookie + 302 带 code&state
+        // 种 SSO cookie + 200 体 redirectUrl 带 code&state
         String setCookie = result.getResponse().getHeader("Set-Cookie");
         assertThat(setCookie).isNotNull();
         assertThat(setCookie).startsWith(ssoProperties.getCookieName() + "=");
         assertThat(setCookie).contains("HttpOnly");
         assertThat(setCookie).contains("SameSite=Lax");
-        assertThat(queryParam(result, "code")).isNotBlank();
-        assertThat(queryParam(result, "state")).isEqualTo("st");
+        assertThat(result.getResponse().getHeader("Location")).isNull();
+        String url = redirectUrl(result);
+        assertThat(queryParam(url, "code")).isNotBlank();
+        assertThat(queryParam(url, "state")).isEqualTo("st");
     }
 
     @Test
@@ -86,9 +90,9 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         MvcResult register = mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, emailCode, null, PASSWORD)))
-            .andExpect(status().isFound())
+            .andExpect(status().isOk())
             .andReturn();
-        String code = queryParam(register, "code");
+        String code = queryParam(redirectUrl(register), "code");
 
         mvc.perform(post("/token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
@@ -102,13 +106,13 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
             .andExpect(jsonPath("$.id_token").isNotEmpty())
             .andExpect(jsonPath("$.refresh_token").isNotEmpty());
 
-        // 注册后同凭据能走 /api/auth/login 登录
+        // 注册后同凭据能走 /api/auth/login 登录（JSON 变体成功 200 {redirectUrl}）
         mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"st2\",\"account\":\"" + EMAIL + "\",\"password\":\"" + PASSWORD + "\"}"))
-            .andExpect(status().isFound())
-            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
     }
 
     /** 当场验码 AC：验不过不建号。 */
@@ -144,7 +148,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, emailCode, null, null)))
-            .andExpect(status().isFound());
+            .andExpect(status().isOk());
 
         Account account = accountRepository.findByEmail(EMAIL).orElseThrow();
         assertThat(account.getPasswordHash()).isNull();
@@ -162,8 +166,8 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"st\",\"account\":\"" + EMAIL + "\",\"code\":\"" + loginCode + "\"}"))
-            .andExpect(status().isFound())
-            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
     }
 
     @Test
@@ -241,7 +245,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
 
     @Test
     void given_new_phone_with_code_when_register_via_form_then_same_contract_as_json() throws Exception {
-        // identity-web 原生 form 顶层提交（issue #23）——与 JSON 同一契约
+        // identity-web 原生 form 顶层提交（issue #23）——form 变体成功保持 302（JSON 变体为 200 {redirectUrl}，#26）
         String phoneCode = sendSmsCode(PHONE, "REGISTER");
         MvcResult result = mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
