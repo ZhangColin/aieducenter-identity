@@ -70,6 +70,23 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 ### 凭据（Credential）
 证明「我是这个 userId」的东西——密码(hash) / 邮箱手机验证码(Redis 一次性) / 第三方 token(不存)。登录 = 用任一凭据证明 → 解析 userId → 建 SSO 会话 + 发 code。
 
+### 发码通道（MessageSender 端口，分期）
+- 端口在 domain：`MessageSender.send(target, code, purpose)`；**当前唯一实现 = LogMessageSenderAdapter**（码进日志，生产占位）——真实短信/邮件网关**以后单独做**（独立排期），届时只换适配器，领域/契约零改动。
+- 通道未接期间任何环境用户都收不到码；prod 注册/验证码登录实际不可用，可接受（prod 未上线）。
+
+### dev 固定码（开发态验码基建，#28 配套，实现 = #29）
+- **生成处固定**（不是验码处旁路）：非 prod 配 `verification.code.dev-code`（短信/邮箱码，如 246810）+ `verification.captcha.dev-code`（图形码，如 qa58）→ 生成器直接返回配置值，照常存 Redis、照常比对/一次性消费/过期/限流。被绕过的只有「通道投递」最后一公里，比对路径全真。
+- **统一原则**：dev 里一切「答案在图片里/手机上/邮箱里」的环节生成处固定；识别与比对永不造假（不旁路、不 OCR——图形码干扰线生来反 OCR，喂自动化=脆弱测试）。
+- **prod 防误开**：prod profile 配了任一键 → 启动拒绝（fail fast）。
+- 定位 = **永久测试基建**（类比 Stripe test mode），真实通道接入后依然保留；比对逻辑另有本仓 CapturingMessageSender 集成测试每次构建担保。
+- 各层自动化怎么拿答案：本仓 JVM 集成测试 = 直读 Redis 真码（CaptchaFlowIntegrationTest 模式）；跨进程 e2e/QA 脚本 = 敲配置固定值；人肉 QA = 无感（图形码图片画的就是固定串）。
+
+### 图形验证码（Captcha）
+- hutool `LineCaptcha`（130×40、4 字符、20 干扰线，base64 PNG），Redis 3min 一次性。
+- **只保护短信发码**（防脚本轰炸烧钱，`captchaId`/`captchaCode` 必填）；邮箱发码不设（成本低，靠限流兜底）。
+- dev 下生成处固定（`verification.captcha.dev-code`，见上节）；本仓集成测试直读 Redis 拿真码，不识别图片。
+- 将来如升级行为验证码（滑块类 SaaS），随真实短信通道一起评估。
+
 ### External Identity（第三方绑定）
 一张 `external_identities` 表：`provider` + `provider_uid` + `userId`。社交登录靠它定位/归一，一张表支持多 provider 绑同一用户。
 
@@ -77,7 +94,7 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - 开放注册；**至少一联络方式**(email/phone 至少其一)**当场发码验证、验过才建号**（填了哪个联络方式就验哪个的码，未验的不落库——防占用他人联络方式）；**密码可选**（设了密码登，没设走 login-code 验证码登）。
 - **注册即登录**：建号 → 建 SSO 会话 → 发 code（同登录后半段，不再单独登一次）。
 - 仅社交可直接建号 + 引导补联络方式（不阻断）。
-- 落地分期：**密码注册（#18）+ 当场验码/密码可选/验证码登录（#22）均已落地**（`/api/auth/register` + `/api/auth/login-code`；「至少一联络方式」与格式校验收在 `Account.register` 聚合不变量）。
+- 落地分期：**密码注册（#18）+ 当场验码/密码可选/验证码登录（#22）均已落地**（`/api/auth/register` + `/api/auth/login-code`；「至少一联络方式」与格式校验收在 `Account.register` 聚合不变量）。**#28 拍板（2026-08-02）：前端这期接验证码 UI**——identity-web Phase 1「无码注册」拍板推翻（#5 返工），email/phone 注册登录 + 图形码一次做全；dev 联调靠固定码，**不做缺码放行**，契约保持「码永远必填」。注册页密码字段 UI 这期**必填**（后端契约仍支持可选，「纯验证码登录用户」形态等有需求再放开）。
 
 ### 社交登录（微信扫码首批）
 **两层 OAuth**：identity 对业务应用 = IdP，对微信 = 客户端。
@@ -116,7 +133,7 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - **本地**：`.localhost` 多域——浏览器自动解析到 127.0.0.1 + 当 secure context（免改 hosts、免证书）。端口：identity `identity.localhost:10001`、identity-web 登录页 `identity.localhost:10002`（Next dev，rewrite `/api/*`→:10001）、demo BFF `demo.localhost:10010`、demo-web `demo.localhost:3000`（Next 代理 `/api`·`/auth`→BFF）。一键起：`./dev-up.sh`（PG+Redis+四进程命令）；手册 `docs/guide/local-sso-debugging.md`。
 - **demo 消费方**（仓内 `demo/`：`demo-backend` BFF + `demo-web`）：发起 /authorize + 收 callback + BFF 换 token（内存存、浏览器不接触）+ 显示用户。一身三任：**测试必需品 + 对接活示例 + 演示开发姿态**。
 - **dev 一键登**（identity-web 缺席时的手工兜底，#16/#27）：`identity.sso.dev-login.enabled=true`（local profile）保持开启、预置账号照常种入；但 local 的 `login-page-url` 已指向 identity-web 登录页（`identity.localhost:10002/login`），`/authorize` 无 cookie 默认 302 到真实登录页。identity-web 没起时手工访问 `/api/auth/dev-login`（带 authorize 参数）自动登预置账号 `demo@aieducenter.com`、发 code。仍走正常 code→/token 流程（不直接发 token）。
-- **dev SSO 环境**（identity.dev.aieducenter.com）：真实 OIDC；redirect_uri 放行 `localhost:*`；预置测试账号 + 一键快速登录；跳过验证码/短信实发。**不做「指定 userId 直接发 token」捷径**。
+- **dev SSO 环境**（identity.dev.aieducenter.com）：真实 OIDC；redirect_uri 放行 `localhost:*`；预置测试账号 + 一键快速登录；发码通道 = Log（码进日志）；dev 固定码可配（guard 只拦字面 `prod` profile，启用前需部署侧先解决 profile 归属，见 #29 Rollout Notes）。**不做「指定 userId 直接发 token」捷径**。
 - **消费方认证解耦**：业务代码只认「当前登录用户」抽象；姿态 A 连 dev SSO（主线）/ 姿态 B 本地 mock（兜底，消费方自写，不给 mock 端点）。
 
 ## 安全必需集
@@ -187,5 +204,9 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - [x] 开发测试 = `.localhost` + demo 消费方 + dev SSO + 消费方认证解耦
 - [x] 安全集 + 错误框架（OIDC 标准）
 - [x] 应用管理/登记 = 不在本服务，消费 app-registry
+- [x] #28 契约冲突 = 前端接码 UI（c-revised：email/phone 注册登录 + 图形码一次做全）+ dev 固定码配套；不做缺码放行
+- [x] 验证码通道 = 分期：接口先行 + Log 占位 + dev 固定码（生成处固定、prod 拒启）
+- [ ] 真实短信/邮件网关接入（计费/签名报备；邮件可配 mailpit 类假收件箱联调）— 独立排期
+- [ ] 行为验证码（滑块类 SaaS）— 随真实短信通道一起评估
 - [ ] MFA — 本期不做（除非未来特别需求）
 - [ ] 组织/租户 — 推后 Phase 5

@@ -10,6 +10,14 @@ spring:
 
 spring.jpa.show-sql: true
 
+# dev 固定码（issue #29）：生成处固定、比对路径全真，QA/e2e 不依赖真实收码。
+# prod 配置任一键将被 DevCodeProdGuard 拒绝启动。
+verification:
+  code:
+    dev-code: "246810"
+  captcha:
+    dev-code: "qa58"
+
 # 本地联调（issue #16/#27）：.localhost 多域 + identity-web 真实登录页
 identity:
   sso:

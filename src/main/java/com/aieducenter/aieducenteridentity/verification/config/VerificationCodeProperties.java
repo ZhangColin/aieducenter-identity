@@ -39,6 +39,13 @@ public class VerificationCodeProperties {
      */
     private Duration ipLimitWindow = Duration.ofHours(1);
 
+    /**
+     * dev 固定验证码（issue #29）：非空时生成器直接返回该值（生成处固定，比对路径全真），
+     * 供不依赖真实收码的联调/QA/e2e 使用。默认空 = 禁用。prod profile 配置将被
+     * {@link DevCodeProdGuard} 拒绝启动。
+     */
+    private String devCode = "";
+
     public int getExpireMinutes() {
         return expireMinutes;
     }
@@ -77,5 +84,13 @@ public class VerificationCodeProperties {
 
     public void setIpLimitWindow(Duration ipLimitWindow) {
         this.ipLimitWindow = ipLimitWindow;
+    }
+
+    public String getDevCode() {
+        return devCode;
+    }
+
+    public void setDevCode(String devCode) {
+        this.devCode = devCode;
     }
 }
