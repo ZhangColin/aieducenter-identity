@@ -6,7 +6,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,20 +47,44 @@ public class AuthController {
         this.cookieService = cookieService;
     }
 
-    @PostMapping("/login")
+    @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "密码登录", description = "验凭据 → 建 SSO 会话 + 种 cookie + 发 code + 302 回 redirect_uri")
     public ResponseEntity<Void> loginByPassword(@Valid @RequestBody LoginByPasswordSsoCommand command,
             HttpServletResponse response) {
-        SsoLoginResult result = loginService.loginByPassword(command);
-        cookieService.setSessionCookie(response, result.sessionId());
-        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(result.redirectUrl())).build();
+        return respond(loginService.loginByPassword(command), response);
     }
 
-    @PostMapping("/register")
+    /**
+     * form 顶层提交入口（identity-web 登录页，issue #23）。
+     *
+     * <p>SPA fetch 收到 302 会自动跟随且拿不到 Location（跨域跟随被 CORS 拦死）；原生 form 提交让
+     * 浏览器顶层导航自然跟随 302——SSO 链路保持「跨站全后端 302 + 浏览器导航、零跨域 fetch」。
+     * 与 JSON 入口同一契约（字段名同为 camelCase，form 只是编码差异）、同一 service。</p>
+     */
+    @PostMapping(value = "/login", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @Operation(summary = "密码登录（form 提交）", description = "同 JSON 登录，供浏览器原生 form 顶层提交")
+    public ResponseEntity<Void> loginByPasswordForm(@Valid @ModelAttribute LoginByPasswordSsoCommand command,
+            HttpServletResponse response) {
+        return respond(loginService.loginByPassword(command), response);
+    }
+
+    @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "密码注册", description = "唯一性校验 → 建号 → 注册即登录（建 SSO 会话 + 种 cookie + 发 code + 302 回 redirect_uri）")
     public ResponseEntity<Void> registerByPassword(@Valid @RequestBody RegisterByPasswordSsoCommand command,
             HttpServletResponse response) {
-        SsoLoginResult result = registerService.registerByPassword(command);
+        return respond(registerService.registerByPassword(command), response);
+    }
+
+    /** form 顶层提交入口（identity-web 注册页）——同 {@link #loginByPasswordForm} 的动机，同一契约。 */
+    @PostMapping(value = "/register", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @Operation(summary = "密码注册（form 提交）", description = "同 JSON 注册，供浏览器原生 form 顶层提交")
+    public ResponseEntity<Void> registerByPasswordForm(@Valid @ModelAttribute RegisterByPasswordSsoCommand command,
+            HttpServletResponse response) {
+        return respond(registerService.registerByPassword(command), response);
+    }
+
+    /** 认证成功统一响应：种 SSO cookie + 302 回 {@code redirect_uri?code&state}。 */
+    private ResponseEntity<Void> respond(SsoLoginResult result, HttpServletResponse response) {
         cookieService.setSessionCookie(response, result.sessionId());
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(result.redirectUrl())).build();
     }

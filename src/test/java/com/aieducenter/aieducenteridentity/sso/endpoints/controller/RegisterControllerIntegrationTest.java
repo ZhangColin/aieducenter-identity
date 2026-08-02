@@ -180,4 +180,50 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
 
         assertThat(accountRepository.findByEmail(EMAIL)).isEmpty();
     }
+
+    @Test
+    void given_new_phone_when_register_via_form_then_same_contract_as_json() throws Exception {
+        // identity-web 原生 form 顶层提交（issue #23）——与 JSON 同一契约
+        MvcResult result = mvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("clientId", CLIENT_ID)
+                .param("redirectUri", REDIRECT_URI)
+                .param("state", "st")
+                .param("phone", PHONE)
+                .param("password", PASSWORD))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
+            .andReturn();
+
+        assertThat(result.getResponse().getHeader("Set-Cookie"))
+            .startsWith(ssoProperties.getCookieName() + "=");
+        assertThat(queryParam(result, "code")).isNotBlank();
+        assertThat(accountRepository.findByPhone(PHONE)).isPresent();
+    }
+
+    @Test
+    void given_existing_email_when_register_via_form_then_409() throws Exception {
+        createEmailAccount(EMAIL, PASSWORD);
+
+        mvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("clientId", CLIENT_ID)
+                .param("redirectUri", REDIRECT_URI)
+                .param("email", EMAIL)
+                .param("password", PASSWORD))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").exists());
+    }
+
+    @Test
+    void given_missing_password_when_register_via_form_then_400() throws Exception {
+        mvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("clientId", CLIENT_ID)
+                .param("redirectUri", REDIRECT_URI)
+                .param("email", EMAIL))
+            .andExpect(status().isBadRequest());
+
+        assertThat(accountRepository.findByEmail(EMAIL)).isEmpty();
+    }
 }

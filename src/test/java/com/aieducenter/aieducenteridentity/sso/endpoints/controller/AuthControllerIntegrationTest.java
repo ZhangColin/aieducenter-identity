@@ -95,4 +95,58 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.code").exists());
     }
+
+    @Test
+    void given_correct_password_when_login_via_form_then_same_contract_as_json() throws Exception {
+        String phone = "13900111004";
+        createPhoneAccount(phone, PASSWORD);
+
+        // identity-web 原生 form 顶层提交（issue #23）——与 JSON 同一契约：302 + cookie + code&state
+        MvcResult result = mvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("clientId", CLIENT_ID)
+                .param("redirectUri", REDIRECT_URI)
+                .param("state", "st")
+                .param("nonce", "non")
+                .param("account", phone)
+                .param("password", PASSWORD))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")))
+            .andReturn();
+
+        String setCookie = result.getResponse().getHeader("Set-Cookie");
+        assertThat(setCookie).isNotNull();
+        assertThat(setCookie).startsWith(ssoProperties.getCookieName() + "=");
+        assertThat(queryParam(result, "code")).isNotBlank();
+        assertThat(queryParam(result, "state")).isEqualTo("st");
+    }
+
+    @Test
+    void given_wrong_password_when_login_via_form_then_401() throws Exception {
+        String phone = "13900111005";
+        createPhoneAccount(phone, PASSWORD);
+
+        mvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("clientId", CLIENT_ID)
+                .param("redirectUri", REDIRECT_URI)
+                .param("account", phone)
+                .param("password", PASSWORD + "x"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.code").exists());
+    }
+
+    @Test
+    void given_invalid_client_when_login_via_form_then_error_without_redirect() throws Exception {
+        MvcResult result = mvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("clientId", "ghost")
+                .param("redirectUri", REDIRECT_URI)
+                .param("account", "13900111006")
+                .param("password", PASSWORD))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("unauthorized_client"))
+            .andReturn();
+        assertThat(result.getResponse().getHeader("Location")).isNull();
+    }
 }
