@@ -1,6 +1,7 @@
 package com.aieducenter.aieducenteridentity.account.domain.aggregate;
 
 import java.time.LocalDateTime;
+import java.util.regex.Pattern;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -16,6 +17,8 @@ import com.cartisan.core.stereotype.Aggregate;
 import com.cartisan.core.util.Assertions;
 import com.cartisan.data.jpa.domain.AuditableSoftDeletable;
 import com.cartisan.data.jpa.id.TsidGenerator;
+
+import cn.hutool.core.lang.Validator;
 
 import lombok.Getter;
 
@@ -41,6 +44,10 @@ import lombok.Getter;
 @Table(name = "act_account")
 @Aggregate
 public class Account extends AuditableSoftDeletable implements AggregateRoot<Account, Long> {
+
+    /** 邮箱格式（简化合理规则，与 verification 上下文发码校验同套）。 */
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+        "^[a-zA-Z0-9]([a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$");
 
     @Getter
     @Id
@@ -75,7 +82,8 @@ public class Account extends AuditableSoftDeletable implements AggregateRoot<Acc
      * 注册新账号。
      *
      * <p>至少留一个联络方式（email 或 phone），由调用方保证已「当场发码验证、验过才建号」。
-     * {@code encodedPassword} 可空（纯验证码/社交账号无密码）。</p>
+     * {@code encodedPassword} 可空（纯验证码/社交账号无密码）。
+     * 联络方式格式校验收在本方法（建号不变量）——任何入口（注册/社交/机机）建号都生效。</p>
      *
      * @param email           邮箱（可空）
      * @param phone           手机号（可空）
@@ -86,6 +94,8 @@ public class Account extends AuditableSoftDeletable implements AggregateRoot<Acc
         boolean hasEmail = email != null && !email.isBlank();
         boolean hasPhone = phone != null && !phone.isBlank();
         Assertions.require(hasEmail || hasPhone, AccountError.CONTACT_REQUIRED);
+        Assertions.require(!hasEmail || EMAIL_PATTERN.matcher(email).matches(), AccountError.EMAIL_INVALID);
+        Assertions.require(!hasPhone || Validator.isMobile(phone), AccountError.PHONE_INVALID);
 
         Account account = new Account();
         account.email = hasEmail ? email : null;

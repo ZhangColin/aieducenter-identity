@@ -48,6 +48,8 @@ GET /authorize：验 client_id/redirect_uri/state → 看 SSO cookie
   无 cookie → 302 到登录页(透传 authorize 参数)
 POST /api/auth/login {client_id, redirect_uri, state, nonce, credentials}
   → 验凭据 → 建 SSO 会话 + 种 cookie → 发 code → 302 回 redirect_uri?code&state
+POST /api/auth/register {同 authorize 透传 + email/phone + password}
+  → 唯一性校验 → 建号 → 注册即登录（同 login 后半段）
 ```
 发 code 两处共用一个方法；不引入 ticket/interactionId（最简方案）。
 
@@ -68,6 +70,7 @@ POST /api/auth/login {client_id, redirect_uri, state, nonce, credentials}
 - 开放注册；**至少一联络方式**(email/phone 二选一)**当场发码验证、验过才建号**；**密码可选**（设了密码登，没设验证码登）。
 - **注册即登录**：建号 → 建 SSO 会话 → 发 code（同登录后半段，不再单独登一次）。
 - 仅社交可直接建号 + 引导补联络方式（不阻断）。
+- 落地分期：**密码注册已落地**（`/api/auth/register`，email/phone 至少其一 + 密码必填 + 唯一性校验 + 格式校验收在 `Account.register` 聚合不变量，#18）；当场发码验码 + 密码可选在 #22。
 
 ### 社交登录（微信扫码首批）
 **两层 OAuth**：identity 对业务应用 = IdP，对微信 = 客户端。
