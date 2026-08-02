@@ -67,6 +67,7 @@ public class SsoAuthorizeAppService {
             "client_id", request.clientId(),
             "redirect_uri", request.redirectUri(),
             "state", request.state(),
-            "nonce", request.nonce());
+            "nonce", request.nonce(),
+            "scope", request.scope());
     }
 }

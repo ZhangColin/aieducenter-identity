@@ -48,6 +48,16 @@ class SsoAuthorizeAppServiceTest {
         assertThat(location).contains("redirect_uri=" + url(REDIRECT_URI));
         assertThat(location).contains("state=" + url("st@te"));
         assertThat(location).contains("nonce=" + url("non@ce"));
+        assertThat(location).contains("scope=" + url("openid profile"));
+    }
+
+    @Test
+    void given_no_scope_when_authorize_then_login_page_url_without_scope() {
+        String location = service.handleAuthorize(
+            new AuthorizeRequest(CLIENT_ID, REDIRECT_URI, null, null, null), null);
+
+        assertThat(location).startsWith(properties.getLoginPageUrl());
+        assertThat(location).doesNotContain("scope=");
     }
 
     @Test

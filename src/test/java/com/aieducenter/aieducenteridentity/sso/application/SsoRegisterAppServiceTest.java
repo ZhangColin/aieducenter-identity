@@ -61,11 +61,11 @@ class SsoRegisterAppServiceTest {
         when(passwordEncoderService.encodePassword(PASSWORD)).thenReturn("hash");
         when(sessionRepository.create(any(), eq(EMAIL))).thenReturn(
             new SsoSession("sess-1", 1L, EMAIL, Instant.now(), Instant.now().plusSeconds(60)));
-        when(codeService.issueCodeAndRedirect(any(), eq(client), eq(REDIRECT_URI), eq("non"), eq(null), eq("sess-1"), eq("st")))
+        when(codeService.issueCodeAndRedirect(any(), eq(client), eq(REDIRECT_URI), eq("non"), eq("openid email"), eq("sess-1"), eq("st")))
             .thenReturn(REDIRECT_URI + "?code=ABC&state=st");
 
         SsoLoginResult result = service.registerByPassword(
-            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, "st", "non", EMAIL, null, PASSWORD));
+            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, "st", "non", "openid email", EMAIL, null, PASSWORD));
 
         assertThat(result.sessionId()).isEqualTo("sess-1");
         assertThat(result.redirectUrl()).isEqualTo(REDIRECT_URI + "?code=ABC&state=st");
@@ -84,7 +84,7 @@ class SsoRegisterAppServiceTest {
         when(accountRepository.existsByEmail(EMAIL)).thenReturn(true);
 
         assertThatThrownBy(() -> service.registerByPassword(
-            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, EMAIL, null, PASSWORD)))
+            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, EMAIL, null, PASSWORD)))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
             .isEqualTo(AccountError.EMAIL_ALREADY_EXISTS);
@@ -96,7 +96,7 @@ class SsoRegisterAppServiceTest {
         when(accountRepository.existsByPhone(PHONE)).thenReturn(true);
 
         assertThatThrownBy(() -> service.registerByPassword(
-            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, PHONE, PASSWORD)))
+            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, null, PHONE, PASSWORD)))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
             .isEqualTo(AccountError.PHONE_ALREADY_EXISTS);
@@ -106,7 +106,7 @@ class SsoRegisterAppServiceTest {
     @Test
     void given_neither_email_nor_phone_when_register_then_contact_required() {
         assertThatThrownBy(() -> service.registerByPassword(
-            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, "  ", PASSWORD)))
+            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, null, "  ", PASSWORD)))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
             .isEqualTo(AccountError.CONTACT_REQUIRED);
@@ -123,7 +123,7 @@ class SsoRegisterAppServiceTest {
             .thenReturn(REDIRECT_URI + "?code=ABC");
 
         SsoLoginResult result = service.registerByPassword(
-            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, PHONE, PASSWORD));
+            new RegisterByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, null, PHONE, PASSWORD));
 
         assertThat(result.sessionId()).isEqualTo("sess-1");
         ArgumentCaptor<Account> saved = ArgumentCaptor.forClass(Account.class);
@@ -138,7 +138,7 @@ class SsoRegisterAppServiceTest {
         when(clientValidation.requireActiveClient("ghost")).thenThrow(error);
 
         assertThatThrownBy(() -> service.registerByPassword(
-            new RegisterByPasswordSsoCommand("ghost", REDIRECT_URI, null, null, EMAIL, null, PASSWORD)))
+            new RegisterByPasswordSsoCommand("ghost", REDIRECT_URI, null, null, null, EMAIL, null, PASSWORD)))
             .isSameAs(error);
         verify(accountRepository, never()).save(any());
     }
@@ -150,7 +150,7 @@ class SsoRegisterAppServiceTest {
             .requireRedirectUri(client, "https://evil.example/callback");
 
         assertThatThrownBy(() -> service.registerByPassword(
-            new RegisterByPasswordSsoCommand(CLIENT_ID, "https://evil.example/callback", null, null, EMAIL, null, PASSWORD)))
+            new RegisterByPasswordSsoCommand(CLIENT_ID, "https://evil.example/callback", null, null, null, EMAIL, null, PASSWORD)))
             .isSameAs(error);
         verify(accountRepository, never()).save(any());
     }

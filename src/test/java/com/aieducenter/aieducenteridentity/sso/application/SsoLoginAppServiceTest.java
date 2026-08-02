@@ -56,7 +56,7 @@ class SsoLoginAppServiceTest {
     }
 
     private LoginByPasswordSsoCommand command() {
-        return new LoginByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, "st", "non@ce", ACCOUNT, PASSWORD);
+        return new LoginByPasswordSsoCommand(CLIENT_ID, REDIRECT_URI, "st", "non@ce", "openid profile", ACCOUNT, PASSWORD);
     }
 
     private Account account(AccountStatus status, boolean locked) {
@@ -71,7 +71,7 @@ class SsoLoginAppServiceTest {
         when(passwordEncoderService.verifyPassword(PASSWORD, "hash")).thenReturn(true);
         when(sessionRepository.create(eq(900L), any())).thenReturn(
             new SsoSession("sess-1", 900L, ACCOUNT, Instant.now(), Instant.now().plusSeconds(60)));
-        when(codeService.issueCodeAndRedirect(eq(900L), eq(client), eq(REDIRECT_URI), eq("non@ce"), eq(null), eq("sess-1"), eq("st")))
+        when(codeService.issueCodeAndRedirect(eq(900L), eq(client), eq(REDIRECT_URI), eq("non@ce"), eq("openid profile"), eq("sess-1"), eq("st")))
             .thenReturn(REDIRECT_URI + "?code=ABC&state=st");
 
         SsoLoginResult result = service.loginByPassword(command());
@@ -125,7 +125,7 @@ class SsoLoginAppServiceTest {
         when(clientValidation.requireActiveClient("ghost")).thenThrow(error);
 
         assertThatThrownBy(() -> service.loginByPassword(
-            new LoginByPasswordSsoCommand("ghost", REDIRECT_URI, null, null, ACCOUNT, PASSWORD)))
+            new LoginByPasswordSsoCommand("ghost", REDIRECT_URI, null, null, null, ACCOUNT, PASSWORD)))
             .isSameAs(error);
     }
 
@@ -136,7 +136,7 @@ class SsoLoginAppServiceTest {
             .requireRedirectUri(client, "https://evil.example/callback");
 
         assertThatThrownBy(() -> service.loginByPassword(
-            new LoginByPasswordSsoCommand(CLIENT_ID, "https://evil.example/callback", null, null, ACCOUNT, PASSWORD)))
+            new LoginByPasswordSsoCommand(CLIENT_ID, "https://evil.example/callback", null, null, null, ACCOUNT, PASSWORD)))
             .isSameAs(error);
     }
 }

@@ -123,6 +123,78 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
             .andExpect(jsonPath("$.data.phone").value(PHONE));
     }
 
+    /**
+     * scope 端到端一致性（issue #25 AC）：/authorize 跳登录页透传 scope；首次登录（login 带 scope）与
+     * 二次免登同参时，code 换出的 access_token scope / id_token 声明一致。
+     */
+    @Test
+    void given_scope_when_first_login_then_token_claims_match_second_sso() throws Exception {
+        String email = "scope-e2e@aieducenter.com";
+        accountRepository.save(Account.register(email, PHONE, passwordEncoderService.encodePassword(PASSWORD)));
+        String scope = "openid profile email phone";
+
+        // 1. /authorize 带 scope 无会话 → 302 登录页透传 scope
+        MvcResult auth1 = mvc.perform(get("/authorize")
+                .param("client_id", CLIENT_ID)
+                .param("redirect_uri", REDIRECT_URI)
+                .param("state", STATE)
+                .param("nonce", NONCE)
+                .param("scope", scope))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(ssoProperties.getLoginPageUrl())))
+            .andReturn();
+        assertThat(queryParam(auth1, "scope")).isEqualTo(scope);
+
+        // 2. 首次登录带 scope → code 换 token：access_token 绑请求 scope、id_token 出 email/phone 声明
+        MvcResult login = mvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
+                    + "\"state\":\"" + STATE + "\",\"nonce\":\"" + NONCE + "\",\"scope\":\"" + scope + "\","
+                    + "\"account\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}"))
+            .andExpect(status().isFound())
+            .andReturn();
+        Cookie ssoCookie = new Cookie(ssoProperties.getCookieName(),
+            extractCookieValue(login, ssoProperties.getCookieName()));
+
+        MvcResult token1 = exchangeCode(queryParam(login, "code"));
+        JWTClaimsSet access1 = verifyJwtWithPublicKey(JsonPath.read(token1.getResponse().getContentAsString(), "$.access_token"));
+        JWTClaimsSet id1 = verifyJwtWithPublicKey(JsonPath.read(token1.getResponse().getContentAsString(), "$.id_token"));
+        assertThat(access1.getStringClaim("scope")).isEqualTo(scope);
+        assertThat(id1.getStringClaim("email")).isEqualTo(email);
+        assertThat(id1.getStringClaim("phone_number")).isEqualTo(PHONE);
+
+        // 3. 二次 /authorize 同参凭 cookie 免登 → code 换 token：scope/声明与首次登录一致
+        MvcResult auth2 = mvc.perform(get("/authorize")
+                .param("client_id", CLIENT_ID)
+                .param("redirect_uri", REDIRECT_URI)
+                .param("state", STATE)
+                .param("nonce", NONCE)
+                .param("scope", scope)
+                .cookie(ssoCookie))
+            .andExpect(status().isFound())
+            .andReturn();
+
+        MvcResult token2 = exchangeCode(queryParam(auth2, "code"));
+        JWTClaimsSet access2 = verifyJwtWithPublicKey(JsonPath.read(token2.getResponse().getContentAsString(), "$.access_token"));
+        JWTClaimsSet id2 = verifyJwtWithPublicKey(JsonPath.read(token2.getResponse().getContentAsString(), "$.id_token"));
+        assertThat(access2.getStringClaim("scope")).isEqualTo(access1.getStringClaim("scope"));
+        assertThat(id2.getStringClaim("email")).isEqualTo(id1.getStringClaim("email"));
+        assertThat(id2.getStringClaim("phone_number")).isEqualTo(id1.getStringClaim("phone_number"));
+    }
+
+    /** code 换 token（授权码 grant），返回 /token 响应。 */
+    private MvcResult exchangeCode(String code) throws Exception {
+        return mvc.perform(post("/token")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("grant_type", "authorization_code")
+                .param("code", code)
+                .param("redirect_uri", REDIRECT_URI)
+                .param("client_id", CLIENT_ID)
+                .param("client_secret", CLIENT_SECRET))
+            .andExpect(status().isOk())
+            .andReturn();
+    }
+
     @Test
     void given_consumed_code_when_token_again_then_invalid_grant() throws Exception {
         createAccount();

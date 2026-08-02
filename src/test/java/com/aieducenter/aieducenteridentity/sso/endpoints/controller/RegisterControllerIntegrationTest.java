@@ -1,6 +1,7 @@
 package com.aieducenter.aieducenteridentity.sso.endpoints.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.sso.endpoints.SsoIntegrationTestBase;
+import com.jayway.jsonpath.JsonPath;
+import com.nimbusds.jwt.JWTClaimsSet;
 
 /**
  * {@code POST /api/auth/register} HTTP 黑盒集成测试（issue #18 AC）。
@@ -199,6 +202,71 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
             .startsWith(ssoProperties.getCookieName() + "=");
         assertThat(queryParam(result, "code")).isNotBlank();
         assertThat(accountRepository.findByPhone(PHONE)).isPresent();
+    }
+
+    /**
+     * 注册带 scope（issue #25 AC）：form 入口接受 scope 并透传发码；注册即登录与二次免登同参时，
+     * code 换出的 access_token scope / id_token 声明一致（与 login 侧同一发码契约）。
+     */
+    @Test
+    void given_scope_when_register_then_token_claims_match_second_sso() throws Exception {
+        String scope = "openid profile phone";
+        MvcResult register = mvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("clientId", CLIENT_ID)
+                .param("redirectUri", REDIRECT_URI)
+                .param("state", "st")
+                .param("nonce", "non")
+                .param("scope", scope)
+                .param("phone", PHONE)
+                .param("password", PASSWORD))
+            .andExpect(status().isFound())
+            .andReturn();
+        jakarta.servlet.http.Cookie ssoCookie = new jakarta.servlet.http.Cookie(
+            ssoProperties.getCookieName(), extractCookieValue(register, ssoProperties.getCookieName()));
+
+        // 注册即登录发的 code：access_token 绑请求 scope、id_token 出 phone 声明
+        MvcResult token1 = mvc.perform(post("/token")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("grant_type", "authorization_code")
+                .param("code", queryParam(register, "code"))
+                .param("redirect_uri", REDIRECT_URI)
+                .param("client_id", CLIENT_ID)
+                .param("client_secret", CLIENT_SECRET))
+            .andExpect(status().isOk())
+            .andReturn();
+        JWTClaimsSet access1 = verifyJwtWithPublicKey(
+            JsonPath.read(token1.getResponse().getContentAsString(), "$.access_token"));
+        JWTClaimsSet id1 = verifyJwtWithPublicKey(
+            JsonPath.read(token1.getResponse().getContentAsString(), "$.id_token"));
+        assertThat(access1.getStringClaim("scope")).isEqualTo(scope);
+        assertThat(id1.getStringClaim("phone_number")).isEqualTo(PHONE);
+
+        // 二次 /authorize 同参凭 cookie 免登 → code 换 token：scope/声明与注册即登录一致
+        MvcResult auth2 = mvc.perform(get("/authorize")
+                .param("client_id", CLIENT_ID)
+                .param("redirect_uri", REDIRECT_URI)
+                .param("state", "st")
+                .param("nonce", "non")
+                .param("scope", scope)
+                .cookie(ssoCookie))
+            .andExpect(status().isFound())
+            .andReturn();
+        MvcResult token2 = mvc.perform(post("/token")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("grant_type", "authorization_code")
+                .param("code", queryParam(auth2, "code"))
+                .param("redirect_uri", REDIRECT_URI)
+                .param("client_id", CLIENT_ID)
+                .param("client_secret", CLIENT_SECRET))
+            .andExpect(status().isOk())
+            .andReturn();
+        JWTClaimsSet access2 = verifyJwtWithPublicKey(
+            JsonPath.read(token2.getResponse().getContentAsString(), "$.access_token"));
+        JWTClaimsSet id2 = verifyJwtWithPublicKey(
+            JsonPath.read(token2.getResponse().getContentAsString(), "$.id_token"));
+        assertThat(access2.getStringClaim("scope")).isEqualTo(access1.getStringClaim("scope"));
+        assertThat(id2.getStringClaim("phone_number")).isEqualTo(id1.getStringClaim("phone_number"));
     }
 
     @Test

@@ -46,13 +46,13 @@
 GET /authorize：验 client_id/redirect_uri/state → 看 SSO cookie
   有 cookie → 发 code, 302 回 redirect_uri?code&state          ← 二次 SSO
   无 cookie → 302 到登录页(透传 authorize 参数)
-POST /api/auth/login {client_id, redirect_uri, state, nonce, credentials}
+POST /api/auth/login {client_id, redirect_uri, state, nonce, scope, credentials}
   → 验凭据 → 建 SSO 会话 + 种 cookie → 发 code → 302 回 redirect_uri?code&state
 POST /api/auth/register {同 authorize 透传 + email/phone + password}
   → 唯一性校验 → 建号 → 注册即登录（同 login 后半段）
 ```
-发 code 两处共用一个方法；不引入 ticket/interactionId（最简方案）。
-login/register 同时吃 **JSON 与 form-urlencoded**（#23）——identity-web 用原生 form 顶层提交，SSO 跨站全链路保持「后端 302 + 浏览器导航、零跨域 fetch」（SPA fetch 会自动跟 302 且拿不到 Location，跨域跟随被 CORS 拦死）。form 字段名与 JSON 相同（camelCase：`clientId`/`redirectUri`/`state`/`nonce`；form 只是编码差异，不是新契约——区别于 /authorize URL 参数的 snake_case）。
+发 code 两处共用一个方法；不引入 ticket/interactionId（最简方案）。scope 全链路透传（登录页 URL → login/register → 发码绑 code，#25）——首次登录与二次免登同参时 token scope/声明一致。
+login/register 同时吃 **JSON 与 form-urlencoded**（#23）——identity-web 用原生 form 顶层提交，SSO 跨站全链路保持「后端 302 + 浏览器导航、零跨域 fetch」（SPA fetch 会自动跟 302 且拿不到 Location，跨域跟随被 CORS 拦死）。form 字段名与 JSON 相同（camelCase：`clientId`/`redirectUri`/`state`/`nonce`/`scope`；form 只是编码差异，不是新契约——区别于 /authorize URL 参数的 snake_case）。
 
 ### Account（账号 / 终端用户）
 平台一个终端用户。一张 `account` 表：`userId`（主键 TSID，作 SSO `sub`，换邮箱/手机不变）；登录定位字段 `email`/`phone`（唯一、可空）+ `password_hash`（可空）；状态字段。

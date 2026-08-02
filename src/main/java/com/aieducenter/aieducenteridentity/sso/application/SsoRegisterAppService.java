@@ -74,7 +74,7 @@ public class SsoRegisterAppService {
 
         SsoSession session = sessionRepository.create(account.getId(), account.displayLabel(null));
         String redirectUrl = codeService.issueCodeAndRedirect(
-            account.getId(), client, command.redirectUri(), command.nonce(), null,
+            account.getId(), client, command.redirectUri(), command.nonce(), command.scope(),
             session.sessionId(), command.state());
         return new SsoLoginResult(session.sessionId(), redirectUrl);
     }

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 /**
  * /api/auth/register 密码注册命令（CONTEXT 注册 / issue #18）。
  *
- * <p>identity-web 注册页提交：authorize 上下文（client/redirect/state/nonce）+ 联络方式（email/phone 至少其一）
+ * <p>identity-web 注册页提交：authorize 上下文（client/redirect/state/nonce/scope）+ 联络方式（email/phone 至少其一）
  * + 密码。本期密码必填（验证码登录 #22 落地前，不设密码的账号登不进来）；
  * 「至少一联络方式」与格式校验由 {@code Account.register} 聚合不变量兜底。</p>
  *
@@ -13,6 +13,7 @@ import jakarta.validation.constraints.NotBlank;
  * @param redirectUri 回调地址（精确匹配白名单）
  * @param state       CSRF 串（可空，回带）
  * @param nonce       OIDC nonce（可空，写入 id_token）
+ * @param scope       授权范围（可空，绑进 code——与二次免登同一发码契约，issue #25）
  * @param email       注册邮箱（可空，与 phone 至少其一）
  * @param phone       注册手机号（可空，与 email 至少其一）
  * @param password    明文密码（必填）
@@ -24,6 +25,7 @@ public record RegisterByPasswordSsoCommand(
     @NotBlank(message = "redirect_uri 不能为空") String redirectUri,
     String state,
     String nonce,
+    String scope,
     String email,
     String phone,
     @NotBlank(message = "密码不能为空") String password
