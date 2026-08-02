@@ -28,7 +28,7 @@ public interface VerificationCodePort {
      *
      * @param email   邮箱
      * @param code    验证码
-     * @param purpose 用途（REGISTER/RESET_PASSWORD）
+     * @param purpose 用途（REGISTER/LOGIN/RESET_PASSWORD）
      * @throws com.cartisan.core.exception.DomainException 验证码错误/过期/已用
      */
     void verifyCode(String email, String code, String purpose);

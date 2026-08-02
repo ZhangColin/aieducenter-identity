@@ -1,6 +1,11 @@
 package com.aieducenter.aieducenteridentity.sso.endpoints;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
@@ -14,7 +19,8 @@ import com.nimbusds.jwt.SignedJWT;
  * SSO HTTP 黑盒集成测试基类（issue #15）。
  *
  * <p>背靠 {@link IdentityIntegrationTestBase}（Testcontainers 真 PG+Redis；stub 消费方常量、建号、
- * 建 SSO 会话/cookie 由根基类提供），本类补 JWT 验签与 OIDC 响应解析等 SSO 专用助手。</p>
+ * 建 SSO 会话/cookie 由根基类提供），本类补 JWT 验签、OIDC 响应解析与发码（验证码全链路前置）
+ * 等 SSO 专用助手。</p>
  */
 public abstract class SsoIntegrationTestBase extends IdentityIntegrationTestBase {
 
@@ -62,5 +68,30 @@ public abstract class SsoIntegrationTestBase extends IdentityIntegrationTestBase
     /** 从 JSON 响应体读 OIDC error 字段。 */
     protected static String oidcError(MvcResult result) throws java.io.UnsupportedEncodingException {
         return JsonPath.read(result.getResponse().getContentAsString(), "$.error");
+    }
+
+    /** 发邮箱验证码（verification 上下文公开端点），返回消息捕获器拿到的真实码。 */
+    protected String sendEmailCode(String email, String purpose) throws Exception {
+        mvc.perform(post("/api/account/verification-code/email")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\",\"purpose\":\"" + purpose + "\"}"))
+            .andExpect(status().isOk());
+        return capturingMessageSender.lastCodeFor(email);
+    }
+
+    /** 发短信验证码（前置取真实图形验证码），返回消息捕获器拿到的真实码。 */
+    protected String sendSmsCode(String phone, String purpose) throws Exception {
+        MvcResult captcha = mvc.perform(get("/api/captcha"))
+            .andExpect(status().isOk())
+            .andReturn();
+        String captchaId = JsonPath.read(captcha.getResponse().getContentAsString(), "$.data.captchaId");
+        String captchaCode = redisTemplate.opsForValue().get("captcha:" + captchaId);
+
+        mvc.perform(post("/api/account/verification-code/sms")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"phone\":\"" + phone + "\",\"purpose\":\"" + purpose + "\","
+                    + "\"captchaId\":\"" + captchaId + "\",\"captchaCode\":\"" + captchaCode + "\"}"))
+            .andExpect(status().isOk());
+        return capturingMessageSender.lastCodeFor(phone);
     }
 }

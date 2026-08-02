@@ -7,23 +7,26 @@ import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.error.AccountError;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
-import com.aieducenter.aieducenteridentity.sso.application.dto.RegisterByPasswordSsoCommand;
+import com.aieducenter.aieducenteridentity.sso.application.dto.RegisterSsoCommand;
 import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
-import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
-import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
+import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
+import com.aieducenter.aieducenteridentity.verification.domain.enums.VerificationPurpose;
+import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
 import com.cartisan.core.exception.DomainException;
 
 /**
- * /api/auth/register 密码注册（CONTEXT 注册 / issue #18）。
+ * /api/auth/register 注册（CONTEXT 注册 / issue #18、#22）。
  *
- * <p>校验 client/redirect_uri → 唯一性（email/phone 全局唯一，重复 409 不建第二个号）→ 建号
- * （密码 hash 落库，联络方式格式由 {@link Account#register} 不变量校验）→ 注册即登录：
- * 建 SSO 会话 → 发 code（与 {@link SsoLoginAppService} 同一后半段、共用发码路径）。</p>
+ * <p>校验 client/redirect_uri → 唯一性（email/phone 全局唯一，重复 409 不建第二个号）→
+ * 当场验码（提供的联络方式各验各的码，purpose=REGISTER，<b>验不过不建号</b>）→ 建号
+ * （密码可选：设了 hash 落库走密码登，没设走 /api/auth/login-code 验证码登；
+ * 联络方式格式由 {@link Account#register} 不变量校验）→ 注册即登录：
+ * {@link SsoLoginCompletionAppService 统一后半段}（与 login 同一发码契约）。</p>
  *
- * <p>注册失败（重复/格式错）抛 {@link DomainException}（留注册页显示，不回业务应用）；
+ * <p>注册失败（重复/格式错/验码不过）抛 {@link DomainException}（留注册页显示，不回业务应用）；
  * client/redirect_uri 无效抛 {@link OidcException}（不重定向，与 login 一致）。</p>
  *
  * @since 0.1.0
@@ -31,31 +34,34 @@ import com.cartisan.core.exception.DomainException;
 @Service
 public class SsoRegisterAppService {
 
+    /** 验证码用途：注册（与登录的 LOGIN 分键，互不串用）。 */
+    private static final String REGISTER_PURPOSE = VerificationPurpose.REGISTER.name();
+
     private final SsoClientValidationService clientValidation;
-    private final SsoSessionRepository sessionRepository;
-    private final AuthorizationCodeAppService codeService;
     private final AccountRepository accountRepository;
     private final AccountPasswordEncoderService passwordEncoderService;
+    private final VerificationCodePort verificationCodePort;
+    private final SsoLoginCompletionAppService loginCompletion;
 
-    public SsoRegisterAppService(SsoClientValidationService clientValidation, SsoSessionRepository sessionRepository,
-            AuthorizationCodeAppService codeService, AccountRepository accountRepository,
-            AccountPasswordEncoderService passwordEncoderService) {
+    public SsoRegisterAppService(SsoClientValidationService clientValidation, AccountRepository accountRepository,
+            AccountPasswordEncoderService passwordEncoderService, VerificationCodePort verificationCodePort,
+            SsoLoginCompletionAppService loginCompletion) {
         this.clientValidation = clientValidation;
-        this.sessionRepository = sessionRepository;
-        this.codeService = codeService;
         this.accountRepository = accountRepository;
         this.passwordEncoderService = passwordEncoderService;
+        this.verificationCodePort = verificationCodePort;
+        this.loginCompletion = loginCompletion;
     }
 
     /**
-     * 密码注册 → 建号 → 建 SSO 会话 + 发 code（注册即登录）。
+     * 注册 → 当场验码 → 建号 → 建 SSO 会话 + 发 code（注册即登录）。
      *
      * @throws OidcException   client/redirect_uri 无效（400，不重定向）
-     * @throws DomainException CONTACT_REQUIRED / EMAIL_INVALID / PHONE_INVALID（400）；
+     * @throws DomainException CONTACT_REQUIRED / EMAIL_INVALID / PHONE_INVALID / CODE_INVALID（400，验不过不建号）；
      *                         EMAIL_ALREADY_EXISTS / PHONE_ALREADY_EXISTS（409）
      */
     @Transactional
-    public SsoLoginResult registerByPassword(RegisterByPasswordSsoCommand command) {
+    public SsoLoginResult register(RegisterSsoCommand command) {
         SsoClient client = clientValidation.requireActiveClient(command.clientId());
         clientValidation.requireRedirectUri(client, command.redirectUri());
 
@@ -68,15 +74,24 @@ public class SsoRegisterAppService {
             throw new DomainException(AccountError.PHONE_ALREADY_EXISTS);
         }
 
-        Account account = Account.register(email, phone, passwordEncoderService.encodePassword(command.password()));
+        // 当场验码：提供的联络方式各验各的码——未验的联络方式不落库（防占用他人联络方式）
+        if (email != null) {
+            verificationCodePort.verifyCode(email, requireCode(command.emailCode()), REGISTER_PURPOSE);
+        }
+        if (phone != null) {
+            verificationCodePort.verifyPhoneCode(phone, requireCode(command.phoneCode()), REGISTER_PURPOSE);
+        }
+
+        // 密码可选（不设密码的账号后续用 login-code 登）
+        String passwordHash = command.password() != null && !command.password().isBlank()
+            ? passwordEncoderService.encodePassword(command.password())
+            : null;
+        Account account = Account.register(email, phone, passwordHash);
         account.recordLogin();
         accountRepository.save(account);
 
-        SsoSession session = sessionRepository.create(account.getId(), account.displayLabel(null));
-        String redirectUrl = codeService.issueCodeAndRedirect(
-            account.getId(), client, command.redirectUri(), command.nonce(), command.scope(),
-            session.sessionId(), command.state());
-        return new SsoLoginResult(session.sessionId(), redirectUrl);
+        return loginCompletion.completeLogin(account, client, command.redirectUri(),
+            command.nonce(), command.scope(), command.state());
     }
 
     /** 归一联络方式：去空白，空串归 null（email/phone 均可空，空串等同未填）。 */
@@ -85,5 +100,13 @@ public class SsoRegisterAppService {
             return null;
         }
         return contact.trim();
+    }
+
+    /** 验证码必填兜底：空白等同错码（CODE_INVALID），不进 Redis 查询。 */
+    private static String requireCode(String code) {
+        if (code == null || code.isBlank()) {
+            throw new DomainException(VerificationCodeError.CODE_INVALID);
+        }
+        return code.trim();
     }
 }

@@ -37,7 +37,7 @@
 ### 接口命名空间
 | 命名空间 | 干什么 | 谁调 |
 |---|---|---|
-| `/api/auth/*` | 认证入口：login / login-sms / register——都建 SSO 会话 + 发 code；client-info（公开，登录页查应用名） | identity-web（浏览器） |
+| `/api/auth/*` | 认证入口：login / login-code / register——都建 SSO 会话 + 发 code；client-info（公开，登录页查应用名） | identity-web（浏览器） |
 | `/api/account/*` | 账号管理：me / profile / change-password / reset-password | SSO 会话内 / 机机 |
 | OIDC 根 | /authorize /token /userinfo /jwks /discovery /logout | 按协议 |
 
@@ -46,13 +46,16 @@
 GET /authorize：验 client_id/redirect_uri/state → 看 SSO cookie
   有 cookie → 发 code, 302 回 redirect_uri?code&state          ← 二次 SSO
   无 cookie → 302 到登录页(透传 authorize 参数)
-POST /api/auth/login {client_id, redirect_uri, state, nonce, scope, credentials}
+POST /api/auth/login {client_id, redirect_uri, state, nonce, scope, account, password}
   → 验凭据 → 建 SSO 会话 + 种 cookie → 发 code → 302 回 redirect_uri?code&state
-POST /api/auth/register {同 authorize 透传 + email/phone + password}
-  → 唯一性校验 → 建号 → 注册即登录（同 login 后半段）
+POST /api/auth/login-code {同 authorize 透传 + account + code}
+  → 验验证码(purpose=LOGIN) → 定位账号 → 建 SSO 会话 + 种 cookie → 发 code → 302
+POST /api/auth/register {同 authorize 透传 + email/phone + emailCode/phoneCode + password?}
+  → 唯一性校验 → 当场验码(purpose=REGISTER) → 建号 → 注册即登录（同 login 后半段）
 ```
-发 code 两处共用一个方法；不引入 ticket/interactionId（最简方案）。scope 全链路透传（登录页 URL → login/register → 发码绑 code，#25）——首次登录与二次免登同参时 token scope/声明一致。
-login/register 同时吃 **JSON 与 form-urlencoded**（#23）——identity-web 用原生 form 顶层提交，SSO 跨站全链路保持「后端 302 + 浏览器导航、零跨域 fetch」（SPA fetch 会自动跟 302 且拿不到 Location，跨域跟随被 CORS 拦死）。form 字段名与 JSON 相同（camelCase：`clientId`/`redirectUri`/`state`/`nonce`/`scope`；form 只是编码差异，不是新契约——区别于 /authorize URL 参数的 snake_case）。
+发 code 各处共用一个方法（login/register/login-code 经 SsoLoginCompletionAppService 统一后半段）；不引入 ticket/interactionId（最简方案）。scope 全链路透传（登录页 URL → login/login-code/register → 发码绑 code，#25）——首次登录与二次免登同参时 token scope/声明一致。
+login/login-code/register 同时吃 **JSON 与 form-urlencoded**（#23）——identity-web 用原生 form 顶层提交，SSO 跨站全链路保持「后端 302 + 浏览器导航、零跨域 fetch」（SPA fetch 会自动跟 302 且拿不到 Location，跨域跟随被 CORS 拦死）。form 字段名与 JSON 相同（camelCase：`clientId`/`redirectUri`/`state`/`nonce`/`scope`；form 只是编码差异，不是新契约——区别于 /authorize URL 参数的 snake_case）。
+验证码复用 verification 上下文：**purpose 分键**（REGISTER/LOGIN/RESET_PASSWORD，Redis key = 联络方式:用途），注册码与登录码互不串用；发码走 `/api/account/verification-code/*` 公开端点带 purpose。login-code **防用户枚举**：「账号不存在」与「验证码错误」同一响应（错码由 verification 抛 CODE_INVALID；验码通过但账号不存在补抛同一 CODE_INVALID），停用/锁定在验码通过后才告知。
 
 ### Account（账号 / 终端用户）
 平台一个终端用户。一张 `account` 表：`userId`（主键 TSID，作 SSO `sub`，换邮箱/手机不变）；登录定位字段 `email`/`phone`（唯一、可空）+ `password_hash`（可空）；状态字段。
@@ -68,10 +71,10 @@ login/register 同时吃 **JSON 与 form-urlencoded**（#23）——identity-web
 一张 `external_identities` 表：`provider` + `provider_uid` + `userId`。社交登录靠它定位/归一，一张表支持多 provider 绑同一用户。
 
 ### 注册
-- 开放注册；**至少一联络方式**(email/phone 二选一)**当场发码验证、验过才建号**；**密码可选**（设了密码登，没设验证码登）。
+- 开放注册；**至少一联络方式**(email/phone 至少其一)**当场发码验证、验过才建号**（填了哪个联络方式就验哪个的码，未验的不落库——防占用他人联络方式）；**密码可选**（设了密码登，没设走 login-code 验证码登）。
 - **注册即登录**：建号 → 建 SSO 会话 → 发 code（同登录后半段，不再单独登一次）。
 - 仅社交可直接建号 + 引导补联络方式（不阻断）。
-- 落地分期：**密码注册已落地**（`/api/auth/register`，email/phone 至少其一 + 密码必填 + 唯一性校验 + 格式校验收在 `Account.register` 聚合不变量，#18）；当场发码验码 + 密码可选在 #22。
+- 落地分期：**密码注册（#18）+ 当场验码/密码可选/验证码登录（#22）均已落地**（`/api/auth/register` + `/api/auth/login-code`；「至少一联络方式」与格式校验收在 `Account.register` 聚合不变量）。
 
 ### 社交登录（微信扫码首批）
 **两层 OAuth**：identity 对业务应用 = IdP，对微信 = 客户端。

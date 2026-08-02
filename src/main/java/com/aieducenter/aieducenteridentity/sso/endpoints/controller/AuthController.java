@@ -15,9 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aieducenter.aieducenteridentity.sso.application.SsoLoginAppService;
+import com.aieducenter.aieducenteridentity.sso.application.SsoLoginCodeAppService;
 import com.aieducenter.aieducenteridentity.sso.application.SsoRegisterAppService;
+import com.aieducenter.aieducenteridentity.sso.application.dto.LoginByCodeSsoCommand;
 import com.aieducenter.aieducenteridentity.sso.application.dto.LoginByPasswordSsoCommand;
-import com.aieducenter.aieducenteridentity.sso.application.dto.RegisterByPasswordSsoCommand;
+import com.aieducenter.aieducenteridentity.sso.application.dto.RegisterSsoCommand;
 import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.endpoints.web.SsoCookieService;
 
@@ -37,12 +39,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class AuthController {
 
     private final SsoLoginAppService loginService;
+    private final SsoLoginCodeAppService loginCodeService;
     private final SsoRegisterAppService registerService;
     private final SsoCookieService cookieService;
 
-    public AuthController(SsoLoginAppService loginService, SsoRegisterAppService registerService,
-            SsoCookieService cookieService) {
+    public AuthController(SsoLoginAppService loginService, SsoLoginCodeAppService loginCodeService,
+            SsoRegisterAppService registerService, SsoCookieService cookieService) {
         this.loginService = loginService;
+        this.loginCodeService = loginCodeService;
         this.registerService = registerService;
         this.cookieService = cookieService;
     }
@@ -68,19 +72,34 @@ public class AuthController {
         return respond(loginService.loginByPassword(command), response);
     }
 
-    @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "密码注册", description = "唯一性校验 → 建号 → 注册即登录（建 SSO 会话 + 种 cookie + 发 code + 302 回 redirect_uri）")
-    public ResponseEntity<Void> registerByPassword(@Valid @RequestBody RegisterByPasswordSsoCommand command,
+    @PostMapping(value = "/login-code", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "验证码登录", description = "email/phone + 验证码（LOGIN 用途）→ 建 SSO 会话 + 种 cookie + 发 code + 302 回 redirect_uri；账号不存在与验证码错误同一响应（防枚举）")
+    public ResponseEntity<Void> loginByCode(@Valid @RequestBody LoginByCodeSsoCommand command,
             HttpServletResponse response) {
-        return respond(registerService.registerByPassword(command), response);
+        return respond(loginCodeService.loginByCode(command), response);
+    }
+
+    /** form 顶层提交入口（identity-web 登录页）——同 {@link #loginByPasswordForm} 的动机，同一契约。 */
+    @PostMapping(value = "/login-code", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @Operation(summary = "验证码登录（form 提交）", description = "同 JSON 验证码登录，供浏览器原生 form 顶层提交")
+    public ResponseEntity<Void> loginByCodeForm(@Valid @ModelAttribute LoginByCodeSsoCommand command,
+            HttpServletResponse response) {
+        return respond(loginCodeService.loginByCode(command), response);
+    }
+
+    @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "注册", description = "唯一性校验 → 联络方式当场验码（验不过不建号）→ 建号（密码可选）→ 注册即登录（建 SSO 会话 + 种 cookie + 发 code + 302 回 redirect_uri）")
+    public ResponseEntity<Void> register(@Valid @RequestBody RegisterSsoCommand command,
+            HttpServletResponse response) {
+        return respond(registerService.register(command), response);
     }
 
     /** form 顶层提交入口（identity-web 注册页）——同 {@link #loginByPasswordForm} 的动机，同一契约。 */
     @PostMapping(value = "/register", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    @Operation(summary = "密码注册（form 提交）", description = "同 JSON 注册，供浏览器原生 form 顶层提交")
-    public ResponseEntity<Void> registerByPasswordForm(@Valid @ModelAttribute RegisterByPasswordSsoCommand command,
+    @Operation(summary = "注册（form 提交）", description = "同 JSON 注册，供浏览器原生 form 顶层提交")
+    public ResponseEntity<Void> registerForm(@Valid @ModelAttribute RegisterSsoCommand command,
             HttpServletResponse response) {
-        return respond(registerService.registerByPassword(command), response);
+        return respond(registerService.register(command), response);
     }
 
     /** 认证成功统一响应：种 SSO cookie + 302 回 {@code redirect_uri?code&state}。 */

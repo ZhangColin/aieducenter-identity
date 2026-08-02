@@ -2,13 +2,12 @@ package com.aieducenter.aieducenteridentity.sso.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Instant;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +17,6 @@ import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.enums.AccountStatus;
 import com.aieducenter.aieducenteridentity.account.domain.error.AccountError;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
-import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
 import com.aieducenter.aieducenteridentity.sso.application.dto.LoginByPasswordSsoCommand;
 import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
@@ -26,8 +24,6 @@ import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
 import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
-import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
-import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.cartisan.core.exception.DomainException;
 
 class SsoLoginAppServiceTest {
@@ -38,14 +34,12 @@ class SsoLoginAppServiceTest {
     private static final String PASSWORD = "Password123";
 
     private final SsoClientValidationService clientValidation = mock(SsoClientValidationService.class);
-    private final SsoSessionRepository sessionRepository = mock(SsoSessionRepository.class);
-    private final AuthorizationCodeAppService codeService = mock(AuthorizationCodeAppService.class);
     private final AccountRepository accountRepository = mock(AccountRepository.class);
-    private final ProfileRepository profileRepository = mock(ProfileRepository.class);
     private final AccountPasswordEncoderService passwordEncoderService = mock(AccountPasswordEncoderService.class);
+    private final SsoLoginCompletionAppService loginCompletion = mock(SsoLoginCompletionAppService.class);
 
-    private final SsoLoginAppService service = new SsoLoginAppService(clientValidation, sessionRepository, codeService,
-        accountRepository, profileRepository, passwordEncoderService);
+    private final SsoLoginAppService service = new SsoLoginAppService(clientValidation, accountRepository,
+        passwordEncoderService, loginCompletion);
 
     private final SsoClient client = new SsoClient(CLIENT_ID, "Demo", "hash",
         java.util.Set.of(REDIRECT_URI), java.util.Set.of("openid"), java.util.Set.of("authorization_code"), true);
@@ -64,22 +58,20 @@ class SsoLoginAppServiceTest {
     }
 
     @Test
-    void given_valid_credentials_when_login_then_create_session_and_issue_code() {
+    void given_valid_credentials_when_login_then_delegate_to_completion() {
         Account account = account(AccountStatus.ACTIVE, false);
         when(accountRepository.findByEmail(ACCOUNT)).thenReturn(Optional.empty());
         when(accountRepository.findByPhone(ACCOUNT)).thenReturn(Optional.of(account));
         when(passwordEncoderService.verifyPassword(PASSWORD, "hash")).thenReturn(true);
-        when(sessionRepository.create(eq(900L), any())).thenReturn(
-            new SsoSession("sess-1", 900L, ACCOUNT, Instant.now(), Instant.now().plusSeconds(60)));
-        when(codeService.issueCodeAndRedirect(eq(900L), eq(client), eq(REDIRECT_URI), eq("non@ce"), eq("openid profile"), eq("sess-1"), eq("st")))
-            .thenReturn(REDIRECT_URI + "?code=ABC&state=st");
+        when(loginCompletion.completeLogin(account, client, REDIRECT_URI, "non@ce", "openid profile", "st"))
+            .thenReturn(new SsoLoginResult("sess-1", REDIRECT_URI + "?code=ABC&state=st"));
 
         SsoLoginResult result = service.loginByPassword(command());
 
         assertThat(result.sessionId()).isEqualTo("sess-1");
         assertThat(result.redirectUrl()).isEqualTo(REDIRECT_URI + "?code=ABC&state=st");
         verify(accountRepository).save(account);
-        verify(sessionRepository).create(eq(900L), any());
+        verify(loginCompletion).completeLogin(account, client, REDIRECT_URI, "non@ce", "openid profile", "st");
     }
 
     @Test
@@ -99,6 +91,19 @@ class SsoLoginAppServiceTest {
         when(accountRepository.findByEmail(ACCOUNT)).thenReturn(Optional.empty());
         when(accountRepository.findByPhone(ACCOUNT)).thenReturn(Optional.of(account));
         when(passwordEncoderService.verifyPassword(PASSWORD, "hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.loginByPassword(command()))
+            .isInstanceOf(DomainException.class)
+            .extracting(ex -> ((DomainException) ex).getCodeMessage())
+            .isEqualTo(AccountError.LOGIN_PASSWORD_INCORRECT);
+    }
+
+    @Test
+    void given_passwordless_account_when_login_by_password_then_login_password_incorrect() {
+        Account account = Account.restore(900L, null, ACCOUNT, null, AccountStatus.ACTIVE, false, null);
+        when(accountRepository.findByEmail(ACCOUNT)).thenReturn(Optional.empty());
+        when(accountRepository.findByPhone(ACCOUNT)).thenReturn(Optional.of(account));
+        when(passwordEncoderService.verifyPassword(eq(PASSWORD), isNull())).thenReturn(false);
 
         assertThatThrownBy(() -> service.loginByPassword(command()))
             .isInstanceOf(DomainException.class)
