@@ -37,7 +37,7 @@
 ### 接口命名空间
 | 命名空间 | 干什么 | 谁调 |
 |---|---|---|
-| `/api/auth/*` | 认证入口：login / login-sms / register——都建 SSO 会话 + 发 code | identity-web（浏览器） |
+| `/api/auth/*` | 认证入口：login / login-sms / register——都建 SSO 会话 + 发 code；client-info（公开，登录页查应用名） | identity-web（浏览器） |
 | `/api/account/*` | 账号管理：me / profile / change-password / reset-password | SSO 会话内 / 机机 |
 | OIDC 根 | /authorize /token /userinfo /jwks /discovery /logout | 按协议 |
 
