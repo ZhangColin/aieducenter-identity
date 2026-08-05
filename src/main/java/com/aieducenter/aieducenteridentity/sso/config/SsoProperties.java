@@ -41,7 +41,7 @@ public class SsoProperties {
 
     // ── app-registry 远程解析（#30：消费 app-registry bootstrap 端点替 stub 消费方） ──
 
-    /** app-registry bootstrap 端点配置（base-url + 超时）。 */
+    /** app-registry bootstrap 端点配置（base-url；超时走 cartisan.openapi.timeout.*，#31）。 */
     private AppRegistry appRegistry = new AppRegistry();
 
     public long getSessionIdleSeconds() {
@@ -113,18 +113,8 @@ public class SsoProperties {
         /** bootstrap 端点 base-url（如 {@code https://app-registry.aieducenter.com}）；test 指向 WireMock。 */
         private String baseUrl = "http://localhost:18080";
 
-        /** 连接超时（秒）。 */
-        private int connectTimeoutSeconds = 3;
-
-        /** 读超时（秒）。 */
-        private int readTimeoutSeconds = 5;
-
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
-        public int getConnectTimeoutSeconds() { return connectTimeoutSeconds; }
-        public void setConnectTimeoutSeconds(int connectTimeoutSeconds) { this.connectTimeoutSeconds = connectTimeoutSeconds; }
-        public int getReadTimeoutSeconds() { return readTimeoutSeconds; }
-        public void setReadTimeoutSeconds(int readTimeoutSeconds) { this.readTimeoutSeconds = readTimeoutSeconds; }
     }
 
     // ── dev 一键登（#16：identity-web 缺席时兜登录页；仅 dev/local，prod 不开此开关） ——

@@ -19,12 +19,17 @@ spring:
       ddl-auto: none
     show-sql: false
 
-# 服务间签名（机机）
+# 服务间签名（机机）：identity 出站（如调 app-registry bootstrap）带 cartisan-openapi 签名头（#31）。
 cartisan:
   openapi:
     self:
-      app-id: ${OPENAPI_APP_ID:}
-      app-secret: ${OPENAPI_APP_SECRET:}
+      # 身份自身凭据（app-registry 颁发）；prod 走 env 真凭据，local/test 见各 profile 占位。
+      api-key: ${OPENAPI_API_KEY:}
+      api-secret: ${OPENAPI_API_SECRET:}
+    # 出站超时（#31）：app-registry bootstrap 在 SSO 登录热路径上，收窄到 3s/5s（框架默认 10/30）。
+    timeout:
+      connect-seconds: ${OPENAPI_CONNECT_TIMEOUT:3}
+      read-seconds: ${OPENAPI_READ_TIMEOUT:5}
     apikey-service-url: https://openapi.aieducenter.com/api/v1/api-keys/by-appId
 
 # JWT token 配置（ADR-0002 / issue #11）

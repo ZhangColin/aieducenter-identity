@@ -10,6 +10,14 @@ spring:
 
 spring.jpa.show-sql: true
 
+# 服务间签名（#31）：本地出站凭据占位。需与本地 app-registry 配置的 apiKey/Secret 一致，
+# 否则本地解析 client 会被 app-registry @RequireSignature 拒（OpenApiClient blank 凭据首调即抛）。
+cartisan:
+  openapi:
+    self:
+      api-key: dev-identity-local-key
+      api-secret: dev-identity-local-secret
+
 # dev 固定码（issue #29）：生成处固定、比对路径全真，QA/e2e 不依赖真实收码。
 # prod 配置任一键将被 DevCodeProdGuard 拒绝启动。
 verification:

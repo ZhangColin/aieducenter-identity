@@ -5,25 +5,24 @@ import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
+import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientRepository;
 import com.cartisan.core.stereotype.Adapter;
 import com.cartisan.core.stereotype.PortType;
+import com.cartisan.openapi.client.OpenApiClient;
 import com.cartisan.web.response.ApiResponse;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.benmanes.caffeine.cache.Cache;
 
 /**
- * SsoClient 查询的远程适配器（#30 替 StubSsoClientRepositoryAdapter）——消费 app-registry bootstrap 端点。
+ * SsoClient 查询的远程适配器（#30 替 StubSsoClientRepositoryAdapter、#31 接服务间签名）——消费 app-registry bootstrap 端点。
  *
  * <p>{@code GET /api/app-registry/sso-clients/{clientId}}（{@code ApiResponse} 包装，取 {@code .data}）→
- * {@link SsoClient}。本切片（#6-a）暂不带服务间签名（WireMock 不验签）；#6-b 补
- * {@code cartisan-openapi} 签名拦截。</p>
+ * {@link SsoClient}。出站走框架 {@link OpenApiClient}——自动带 cartisan-openapi 服务间签名头
+ * （app-registry bootstrap 标 {@code @RequireSignature}，#31）+ 跨服务 RequestContext 透传。</p>
  *
  * <p><b>本地缓存</b>（Caffeine 30min TTL）：命中省远程；{@code active=false}/{@code clientSecretHash=null}
  * 负面缓存；4xx/5xx/网络抖动<b>不缓存</b>（返 empty、下次重试），由上层转 {@code invalid_client}/
@@ -45,15 +44,17 @@ public class RemoteSsoClientRepositoryAdapter implements SsoClientRepository {
         return BOOTSTRAP_PATH_TEMPLATE.replace("{clientId}", clientId);
     }
 
-    private static final ParameterizedTypeReference<ApiResponse<SsoClientInfo>> RESPONSE_TYPE =
-        new ParameterizedTypeReference<>() {};
+    private static final TypeReference<ApiResponse<SsoClientInfo>> RESPONSE_TYPE = new TypeReference<>() {};
 
-    private final RestClient restClient;
+    private final OpenApiClient openApiClient;
+    private final String baseUrl;
     private final Cache<String, Optional<SsoClient>> cache;
 
-    public RemoteSsoClientRepositoryAdapter(@Qualifier("appRegistryRestClient") RestClient restClient,
+    public RemoteSsoClientRepositoryAdapter(OpenApiClient openApiClient, SsoProperties properties,
             Cache<String, Optional<SsoClient>> cache) {
-        this.restClient = restClient;
+        this.openApiClient = openApiClient;
+        // 去尾斜杠，防 baseUrl 尾斜杠 + path 头斜杠 = 双斜杠（Spring 路径不匹配）。
+        this.baseUrl = stripTrailingSlash(properties.getAppRegistry().getBaseUrl());
         this.cache = cache;
     }
 
@@ -70,18 +71,16 @@ public class RemoteSsoClientRepositoryAdapter implements SsoClientRepository {
             Optional<SsoClient> loaded = fetch(clientId);
             cache.put(clientId, loaded); // 命中结果入缓存（含 active=false/hash=null 负面缓存）
             return loaded;
-        } catch (RestClientException e) {
-            // 4xx/5xx/网络抖动：不缓存，拒办（上层转 invalid_client / unauthorized_client），下次重试。
-            logger.warn("app-registry 拉取 SsoClient 失败，clientId=" + clientId + ": " + e.getMessage());
+        } catch (RuntimeException e) {
+            // OpenApiClient：4xx/5xx 抛 OpenApiClientException、网络/超时/解析包成 RuntimeException；均不缓存，
+            // 拒办（上层转 invalid_client / unauthorized_client），下次重试。连 throwable 一起记，便于排查被吞的异常。
+            logger.warn("app-registry 拉取 SsoClient 失败，clientId=" + clientId, e);
             return Optional.empty();
         }
     }
 
     private Optional<SsoClient> fetch(String clientId) {
-        ApiResponse<SsoClientInfo> body = restClient.get()
-            .uri(BOOTSTRAP_PATH_TEMPLATE, clientId)
-            .retrieve()
-            .body(RESPONSE_TYPE);
+        ApiResponse<SsoClientInfo> body = openApiClient.get(baseUrl + bootstrapPath(clientId), RESPONSE_TYPE);
         if (body == null || body.data() == null) {
             return Optional.empty();
         }
@@ -104,5 +103,9 @@ public class RemoteSsoClientRepositoryAdapter implements SsoClientRepository {
             info.scopes(),
             info.grants(),
             info.active());
+    }
+
+    private static String stripTrailingSlash(String url) {
+        return url == null || url.isBlank() ? "" : url.replaceAll("/+$", "");
     }
 }

@@ -8,3 +8,11 @@ spring:
   autoconfigure:
     exclude:
       - com.alibaba.druid.spring.boot3.autoconfigure.DruidDataSourceAutoConfigure
+
+# 服务间签名（#31）：测试占位凭据——WireMock 只验签名头存在、不验签名值（AC#1）。
+# OpenApiClient blank 凭据首调即抛，故须给非空占位。
+cartisan:
+  openapi:
+    self:
+      api-key: test-identity-key
+      api-secret: test-identity-secret
