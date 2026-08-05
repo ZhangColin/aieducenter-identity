@@ -11,7 +11,7 @@ import java.util.Set;
  *
  * @param clientId         client_id
  * @param clientName       展示名（登录页显示「登录到 XXX」）
- * @param clientSecretHash client_secret 的哈希（#15 stub 用 BCrypt；真接入 argon2）
+ * @param clientSecretHash client_secret 的 argon2 hash（来自 app-registry，hash-only）
  * @param redirectUris     回调白名单（精确匹配集合）
  * @param scopes           授权范围集合
  * @param grants           支持的 grant_type 集合

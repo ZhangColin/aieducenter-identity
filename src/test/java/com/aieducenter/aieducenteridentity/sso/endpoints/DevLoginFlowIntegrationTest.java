@@ -30,12 +30,12 @@ import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepo
 @DirtiesContext
 @TestPropertySource(properties = {
     "identity.sso.dev-login.enabled=true",
-    "identity.sso.login-page-url=http://localhost/api/auth/dev-login",
-    "identity.sso.stub-redirect-uris[0]=http://demo.localhost:3000/auth/callback"
+    "identity.sso.login-page-url=http://localhost/api/auth/dev-login"
 })
 class DevLoginFlowIntegrationTest extends SsoIntegrationTestBase {
 
-    private static final String REDIRECT = "http://demo.localhost:3000/auth/callback";
+    // 复用基类 REDIRECT_URI（demo-client 的回调白名单，现由 WireMock app-registry stub 提供）。
+    private static final String REDIRECT = REDIRECT_URI;
 
     @Autowired
     private AccountRepository accountRepository;

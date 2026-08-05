@@ -38,7 +38,7 @@ identity:
       key-id: identity-rs256-v1
       audiences:
         - aieducenter-identity
-  # SSO 配置（ADR-0004 / issue #15）——一套 SSO 会话（cookie+Redis+双超时）+ 授权码 + client stub
+  # SSO 配置（ADR-0004 / issue #15）——一套 SSO 会话（cookie+Redis+双超时）+ 授权码 + app-registry 远程解析
   sso:
     session-idle-seconds: 2592000      # 闲置超时 30 天（Redis key TTL 滑动）
     session-absolute-seconds: 7776000   # 绝对超时 90 天
@@ -50,11 +50,11 @@ identity:
       - /api/account/me
       - /api/account/profile
       - /api/account/change-password
-    # client 查询 stub（dev/测试便利；真 app-registry 接入在 #6）
-    stub-client-id: demo-client
-    stub-client-secret: demo-secret-please-change
-    stub-redirect-uris:
-      - https://demo.localhost/auth/callback
+    # app-registry bootstrap 端点（#30 消费 SsoClient facet；test 指向 WireMock、prod 走 env）
+    app-registry:
+      base-url: ${APP_REGISTRY_BASE_URL:http://localhost:18080}
+      connect-timeout-seconds: 3
+      read-timeout-seconds: 5
 
 management:
   endpoints:

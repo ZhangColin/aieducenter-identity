@@ -8,7 +8,7 @@ import com.cartisan.core.stereotype.PortType;
 /**
  * SSO 消费方查询端口（南向，对 app-registry SsoClient facet 的抽象）。
  *
- * <p>当前唯一实现是 stub（#15 测试/dev）；#6 接真 app-registry（远程适配器 + Caffeine 缓存）替换。
+ * <p>实现为 {@code RemoteSsoClientRepositoryAdapter}（#30：远程调 app-registry bootstrap + Caffeine 30min 缓存）。
  * {@code /authorize} 与 {@code /token} 凭 client_id 查询、校验 redirect_uri 白名单 / client_secret。</p>
  *
  * @since 0.1.0

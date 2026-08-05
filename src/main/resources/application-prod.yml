@@ -10,3 +10,9 @@ spring:
 
 spring.jpa.show-sql: false
 logging.level.root: INFO
+
+# app-registry bootstrap（#30）：prod 必须显式提供 base-url（内网服务地址）
+identity:
+  sso:
+    app-registry:
+      base-url: ${APP_REGISTRY_BASE_URL}

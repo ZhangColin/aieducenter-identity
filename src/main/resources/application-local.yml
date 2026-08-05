@@ -24,8 +24,8 @@ identity:
     # /authorize 无 cookie → 302 到 identity-web 登录页（:10002，rewrite /api/* → :10001）
     # identity-web 没起时手工兜底：http://identity.localhost:10001/api/auth/dev-login
     login-page-url: http://identity.localhost:10002/login
-    # 放行 demo 浏览器入口（Next 代理到 demo-backend :10010）
-    stub-redirect-uris:
-      - http://demo.localhost:3000/auth/callback
+    # app-registry 本地端口（../aieducenter-app-registry 本地起在 :10011）
+    app-registry:
+      base-url: http://localhost:10011
     dev-login:
       enabled: true

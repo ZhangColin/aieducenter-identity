@@ -9,7 +9,8 @@ import org.springframework.stereotype.Component;
 /**
  * SSO 配置属性（{@code identity.sso.*}，ADR-0004 / issue #15）。
  *
- * <p>会话双超时（闲置/绝对）、授权码有效期、SSO cookie、登录页 URL、受 SSO 会话保护的路径。</p>
+ * <p>会话双超时（闲置/绝对）、授权码有效期、SSO cookie、登录页 URL、受 SSO 会话保护的路径、
+ * app-registry 远程解析配置（#30 替 stub 消费方）。</p>
  *
  * @since 0.1.0
  */
@@ -38,17 +39,10 @@ public class SsoProperties {
     /** 受 SSO 会话保护的路径（无有效 SSO cookie → 401）。 */
     private List<String> protectedPaths = new ArrayList<>(List.of("/api/account/me", "/api/account/profile"));
 
-    // ── client 查询 stub（#15 测试/dev 便利；真 app-registry 接入在 #6，届时移除） ──
+    // ── app-registry 远程解析（#30：消费 app-registry bootstrap 端点替 stub 消费方） ──
 
-    /** stub 预置消费方 client_id。 */
-    private String stubClientId = "demo-client";
-
-    /** stub 预置消费方 client_secret 明文（#15 stub 用 BCrypt 自哈希；#6 换 argon2 + 真 app-registry）。 */
-    private String stubClientSecret = "demo-secret-please-change";
-
-    /** stub 预置消费方 redirect_uri 白名单（精确匹配）。 */
-    private List<String> stubRedirectUris =
-        new ArrayList<>(List.of("https://demo.localhost/auth/callback"));
+    /** app-registry bootstrap 端点配置（base-url + 超时）。 */
+    private AppRegistry appRegistry = new AppRegistry();
 
     public long getSessionIdleSeconds() {
         return sessionIdleSeconds;
@@ -106,28 +100,31 @@ public class SsoProperties {
         this.protectedPaths = protectedPaths;
     }
 
-    public String getStubClientId() {
-        return stubClientId;
+    public AppRegistry getAppRegistry() {
+        return appRegistry;
     }
 
-    public void setStubClientId(String stubClientId) {
-        this.stubClientId = stubClientId;
+    public void setAppRegistry(AppRegistry appRegistry) {
+        this.appRegistry = appRegistry;
     }
 
-    public String getStubClientSecret() {
-        return stubClientSecret;
-    }
+    /** app-registry bootstrap 端点配置（identity 消费 SsoClient facet 的远程入口）。 */
+    public static class AppRegistry {
+        /** bootstrap 端点 base-url（如 {@code https://app-registry.aieducenter.com}）；test 指向 WireMock。 */
+        private String baseUrl = "http://localhost:18080";
 
-    public void setStubClientSecret(String stubClientSecret) {
-        this.stubClientSecret = stubClientSecret;
-    }
+        /** 连接超时（秒）。 */
+        private int connectTimeoutSeconds = 3;
 
-    public List<String> getStubRedirectUris() {
-        return stubRedirectUris;
-    }
+        /** 读超时（秒）。 */
+        private int readTimeoutSeconds = 5;
 
-    public void setStubRedirectUris(List<String> stubRedirectUris) {
-        this.stubRedirectUris = stubRedirectUris;
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+        public int getConnectTimeoutSeconds() { return connectTimeoutSeconds; }
+        public void setConnectTimeoutSeconds(int connectTimeoutSeconds) { this.connectTimeoutSeconds = connectTimeoutSeconds; }
+        public int getReadTimeoutSeconds() { return readTimeoutSeconds; }
+        public void setReadTimeoutSeconds(int readTimeoutSeconds) { this.readTimeoutSeconds = readTimeoutSeconds; }
     }
 
     // ── dev 一键登（#16：identity-web 缺席时兜登录页；仅 dev/local，prod 不开此开关） ——

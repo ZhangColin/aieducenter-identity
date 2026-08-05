@@ -18,7 +18,7 @@ import com.nimbusds.jwt.SignedJWT;
 /**
  * SSO HTTP 黑盒集成测试基类（issue #15）。
  *
- * <p>背靠 {@link IdentityIntegrationTestBase}（Testcontainers 真 PG+Redis；stub 消费方常量、建号、
+ * <p>背靠 {@link IdentityIntegrationTestBase}（Testcontainers 真 PG+Redis；demo 消费方常量、建号、
  * 建 SSO 会话/cookie 由根基类提供），本类补 JWT 验签、OIDC 响应解析与发码（验证码全链路前置）
  * 等 SSO 专用助手。</p>
  */

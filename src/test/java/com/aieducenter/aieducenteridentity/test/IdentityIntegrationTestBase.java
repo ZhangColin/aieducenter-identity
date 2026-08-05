@@ -1,6 +1,7 @@
 package com.aieducenter.aieducenteridentity.test;
 
 import java.util.Objects;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,15 +10,19 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
 import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
+import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
 
 import jakarta.servlet.http.Cookie;
 
@@ -27,22 +32,28 @@ import jakarta.servlet.http.Cookie;
  * <p>背靠 Testcontainers（真 Postgres + Redis，见 {@link TestContainersConfig}），加载完整应用上下文，
  * 通过 {@link MockMvc} 走真实 HTTP → Controller → AppService → Redis 链路，不做 service 层 mock。
  *
- * <p>每个测试前 flush Redis + 重置消息捕获器，保证测试隔离。
+ * <p>每个测试前 flush Redis + 重置消息捕获器 + 失效 SSO client 缓存，保证测试隔离。
  *
- * <p>SSO 是 identity 唯一用户会话（ADR-0004），故「stub 消费方常量 + 直接建号 + 建 SSO 会话/cookie」
- * 作为认人基础设施收在本基类，account/sso 两组测试共用（注册 HTTP 入口随旧链路拆除，#18 在新链路重建，
- * 测试建号一律走 repository）。</p>
+ * <p>SSO 是 identity 唯一用户会话（ADR-0004），故「demo 消费方常量（现由 {@link WireMockAppRegistryConfig}
+ * stub 的 app-registry 提供，#30）+ 直接建号 + 建 SSO 会话/cookie」作为认人基础设施收在本基类，
+ * account/sso 两组测试共用。</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import({TestContainersConfig.class, CapturingMessageSenderConfig.class})
+@Import({TestContainersConfig.class, CapturingMessageSenderConfig.class, WireMockAppRegistryConfig.class})
 public abstract class IdentityIntegrationTestBase {
 
-    /** stub 预置消费方（{@code SsoProperties} 默认值）。 */
+    /** demo 消费方（WireMock stub 的 app-registry 预置，#30 替 stub 适配器；常量不变供既有测试无感迁移）。 */
     protected static final String CLIENT_ID = "demo-client";
     protected static final String CLIENT_SECRET = "demo-secret-please-change";
     protected static final String REDIRECT_URI = "https://demo.localhost/auth/callback";
+
+    /** app-registry base-url 指向 WireMock（#30）。 */
+    @DynamicPropertySource
+    static void appRegistryProperties(DynamicPropertyRegistry registry) {
+        registry.add("identity.sso.app-registry.base-url", WireMockAppRegistryConfig.WIRE_MOCK::baseUrl);
+    }
 
     @Autowired
     protected MockMvc mvc;
@@ -68,10 +79,15 @@ public abstract class IdentityIntegrationTestBase {
     @Autowired
     protected SsoProperties ssoProperties;
 
+    /** SSO client 本地缓存（Caffeine）；每测试前失效，保证 WireMock 调用计数与缓存行为可观测。 */
+    @Autowired
+    protected Cache<String, Optional<SsoClient>> ssoClientCache;
+
     @BeforeEach
     void resetTestState() {
         Objects.requireNonNull(redisTemplate.getConnectionFactory()).getConnection().flushDb();
         capturingMessageSender.reset();
+        ssoClientCache.invalidateAll();
     }
 
     /** 直接建手机号账号（密码走真实加密），返回 userId。 */

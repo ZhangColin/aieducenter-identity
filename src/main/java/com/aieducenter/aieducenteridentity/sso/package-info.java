@@ -8,7 +8,7 @@
  *   <li>认证入口 {@code /api/auth/*}（密码登录：建会话 + 种 cookie + 发 code）</li>
  *   <li>OIDC Token Endpoint {@code /token}（code 换 access/id/refresh；refresh 轮换）</li>
  *   <li>授权码存储（一次性 60s，绑 client/redirect_uri）</li>
- *   <li>SsoClient 查询（当前 stub，#6 接 app-registry）</li>
+ *   <li>SsoClient 查询（#30 消费 app-registry bootstrap + Caffeine 30min 缓存）</li>
  *   <li>SSO 会话过滤器（受保护接口凭 SSO cookie 认人，全库唯一认人入口）</li>
  * </ul>
  *
