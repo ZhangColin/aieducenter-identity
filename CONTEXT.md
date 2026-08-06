@@ -167,7 +167,7 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - **PKCE**：防 code 被截的「对暗号」机制；BFF 有 client_secret，用不上、不强制。
 - **SLO（单点登出）**：一处登出、所有应用登出。本期做「准 SLO」≤15min。
 
-## 跨项目集成：app-registry（#6-a #30 远程解析 + #6-b #31 服务间签名，已落地）
+## 跨项目集成：app-registry（#6-a #30 远程解析 + #6-b #31 服务间签名 + #6-c #32 容错，已落地）
 
 `aieducenter-app-registry`（平台「应用/消费方」单一登记处，基础能力层）。identity 的 client 注册 = **消费**其 SsoClient facet，不自建 oauth_client 表。
 - 契约：`GET /api/app-registry/sso-clients/{clientId}` → `SsoClientInfo{clientId, appId, clientName, clientSecretHash, redirectUris, scopes, grants, active}`（cartisan-web `ApiResponse` 包装，取 `.data`）。
@@ -175,8 +175,8 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - **出站超时（#31）**：`OpenApiClient` 原 hardcode 10s/30s、调用方收窄不了；框架补 `cartisan.openapi.timeout.connect-seconds/read-seconds`（默认仍 10/30、零感知），identity 收窄到 3s/5s（bootstrap 在 SSO 登录热路径上）。
 - **argon2 + BouncyCastle**：两端统一用 `spring-security-crypto` 的 `Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()`（hash 自描述、两端互验）。该 encoder 运行时走 BouncyCastle，`spring-security-crypto` 将其声明为可选、Boot 3.4 BOM 不管理版本，故 identity 与 app-registry 都显式钉 `bcprov-jdk18on:1.78.1`（匹配 spring-security 6.4.x）。~~「argon2 不加 BouncyCastle」~~ 这句过时——encoder 离了 BC 会 NoClassDefFoundError。
 - **组合状态由 app-registry 算好返回**：`active = client.active && app.active`；任一禁用 → 返回 `active=false` **且 `clientSecretHash=null`**（连 hash 都不给）。identity 拿到 null / active=false 自然拒办 SSO，**不二次查 app**。
-- identity 侧：client 查询端口（`sso.domain.client`）→ **单一**远程适配器 `RemoteSsoClientRepositoryAdapter`（`sso.infrastructure.client`，#30 解析 / #31 签名）。**无 stub、无 profile 分支**——dev/test/prod 同走远程；`StubSsoClientRepositoryAdapter` + `SsoProperties.stub-*` 配置 + `BCryptClientSecretVerifierAdapter` 已随 #30 删除；`Argon2ClientSecretVerifierAdapter` 替 BCrypt；app-registry `base-url` 配进 `SsoProperties.app-registry.base-url`（test 指向 WireMock）。
-- **本地缓存（#30 基础切片）**：Caffeine 30min TTL（`expireAfterWrite`），**含负面缓存**（active=false / hash=null 入缓存）；**4xx/5xx/网络抖动不缓存**（返 empty、下次重试，上层转 `invalid_client`/`unauthorized_client`）。完整韧性（**含过期兜底**：有缓存哪怕过期也顶上、无缓存才拒办）留后续切片。
+- identity 侧：client 查询端口（`sso.domain.client`）→ **单一**远程适配器 `RemoteSsoClientRepositoryAdapter`（`sso.infrastructure.client`，#30 解析 / #31 签名 / #32 容错）。**无 stub、无 profile 分支**——dev/test/prod 同走远程；`StubSsoClientRepositoryAdapter` + `SsoProperties.stub-*` 配置 + `BCryptClientSecretVerifierAdapter` 已随 #30 删除；`Argon2ClientSecretVerifierAdapter` 替 BCrypt；app-registry `base-url` 配进 `SsoProperties.app-registry.base-url`（test 指向 WireMock）。
+- **本地缓存（#30 基础 + #32 完整韧性）**：Caffeine 按 clientId 缓存 `SsoClientCacheEntry`（值 + 写入时刻），`maximumSize` 上限、**无时间淘汰**（last-known-good 尽量驻留以兜底）。① **fresh 窗口 30min**（写入起算）命中缓存不打远程——`/authorize` 高频查询不轰 app-registry；② **负面缓存**——`active=false` / `clientSecretHash=null` / **404「查不到」** 入缓存（`Optional.empty()`），禁用/不存在的 client 不反复打 app-registry；③ **抖动降级**——app-registry 抖动（5xx/连接失败/超时/其它非 404 错）时 **有过期缓存（哪怕 negative）就兜底**（值即最近一次成功解析、不返脏数据）、**无缓存就拒办**（返 empty，上层转 `invalid_client`/`unauthorized_client`），不抛 500。404 不视为抖动（是「查不到」的稳定结论，走负面缓存）。fresh/stale 判定走注入的 `Clock`（测试 `MutableClock` 推进时间确定性触发过期）。
 - secret 认证：`client_secret_post`，argon2 `matches()` 比对（hash-only，永不拿明文）。
 - **应用管理/登记**（注册 app、加 SSO facet、填 redirect_uri、取 client_secret）在 app-registry / 统一后台，**不在本服务**。
 

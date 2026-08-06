@@ -1,7 +1,6 @@
 package com.aieducenter.aieducenteridentity.test;
 
 import java.util.Objects;
-import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +17,7 @@ import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
 import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
-import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
+import com.aieducenter.aieducenteridentity.sso.infrastructure.client.SsoClientCacheEntry;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,7 +40,8 @@ import jakarta.servlet.http.Cookie;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import({TestContainersConfig.class, CapturingMessageSenderConfig.class, WireMockAppRegistryConfig.class})
+@Import({TestContainersConfig.class, CapturingMessageSenderConfig.class, WireMockAppRegistryConfig.class,
+    MutableClockConfig.class})
 public abstract class IdentityIntegrationTestBase {
 
     /** demo 消费方（WireMock stub 的 app-registry 预置，#30 替 stub 适配器；常量不变供既有测试无感迁移）。 */
@@ -81,13 +81,18 @@ public abstract class IdentityIntegrationTestBase {
 
     /** SSO client 本地缓存（Caffeine）；每测试前失效，保证 WireMock 调用计数与缓存行为可观测。 */
     @Autowired
-    protected Cache<String, Optional<SsoClient>> ssoClientCache;
+    protected Cache<String, SsoClientCacheEntry> ssoClientCache;
+
+    /** SsoClient 缓存 fresh/stale 判定时钟（测试可控）；每测试前复位，保证隔离（#32）。 */
+    @Autowired
+    protected MutableClock ssoMutableClock;
 
     @BeforeEach
     void resetTestState() {
         Objects.requireNonNull(redisTemplate.getConnectionFactory()).getConnection().flushDb();
         capturingMessageSender.reset();
         ssoClientCache.invalidateAll();
+        ssoMutableClock.reset();
     }
 
     /** 直接建手机号账号（密码走真实加密），返回 userId。 */
