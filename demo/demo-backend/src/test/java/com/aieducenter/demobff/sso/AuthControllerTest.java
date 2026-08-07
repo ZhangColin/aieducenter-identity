@@ -2,6 +2,9 @@ package com.aieducenter.demobff.sso;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -147,10 +150,28 @@ class AuthControllerTest {
     }
 
     @Test
-    void logout_clears_session_cookie() throws Exception {
-        mvc.perform(post("/auth/logout").cookie(new Cookie("demo_session", "sid")))
+    void logout_clears_local_session_and_cookie() throws Exception {
+        // issue #38：登出仍先清本地 demo 会话（BffSessionStore + demo_session cookie），再跳 identity。
+        when(oidcClient.logoutUrl(any(), any())).thenReturn("http://idp/logout?client_id=demo-client");
+        MvcResult result = mvc.perform(post("/auth/logout").cookie(new Cookie("demo_session", "sid")))
             .andExpect(status().isFound())
-            .andExpect(header().string("Location", "http://demo.localhost:3000/"))
-            .andExpect(cookie().exists("demo_session"));
+            .andExpect(cookie().exists("demo_session"))
+            .andReturn();
+        assertThat(result.getResponse().getCookie("demo_session").getMaxAge()).isZero();
+        verify(sessionStore).remove("sid");
+    }
+
+    @Test
+    void logout_redirects_to_identity_rp_initiated_logout() throws Exception {
+        // issue #38：清完本地会话后 302 到 identity /logout——让浏览器顶层导航到 identity 清 SSO 会话 + sso_session cookie，
+        // 否则 identity 侧 sso_session 仍在 → 下次 /authorize 直接发 code（二次免登）。
+        // post_logout_redirect_uri = demo 首页（appBaseUrl/，需在 app-registry 白名单），state 一次性随机串。
+        when(oidcClient.logoutUrl(any(), any())).thenReturn(
+            "http://idp/logout?client_id=demo-client&post_logout_redirect_uri=http%3A%2F%2Fdemo.localhost%3A3000%2F&state=st");
+        mvc.perform(post("/auth/logout"))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location",
+                "http://idp/logout?client_id=demo-client&post_logout_redirect_uri=http%3A%2F%2Fdemo.localhost%3A3000%2F&state=st"));
+        verify(oidcClient).logoutUrl(eq("http://demo.localhost:3000/"), anyString());
     }
 }

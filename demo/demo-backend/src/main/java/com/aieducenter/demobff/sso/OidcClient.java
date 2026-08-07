@@ -45,6 +45,19 @@ public class OidcClient {
             + "&nonce=" + enc(nonce);
     }
 
+    /**
+     * 构造 identity RP-Initiated Logout 跳转 URL（issue #38）。
+     *
+     * <p>client_id 供 identity 解析 {@code post_logout_redirect_uri} 白名单（与 redirect_uri 同集精确匹配）；
+     * state 原样回带到 post_logout_redirect_uri。identity 清完 SSO 会话+cookie 后，白名单通过则 302 回带。</p>
+     */
+    public String logoutUrl(String postLogoutRedirectUri, String state) {
+        return props.getIssuer() + "/logout"
+            + "?client_id=" + enc(props.getClientId())
+            + "&post_logout_redirect_uri=" + enc(postLogoutRedirectUri)
+            + "&state=" + enc(state);
+    }
+
     /** 用 code + client_secret 服务端换 token（grant_type=authorization_code）。 */
     public TokenResponse exchangeCode(String code) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();

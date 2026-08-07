@@ -7,6 +7,9 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -37,6 +40,19 @@ class OidcClientTest {
         assertThat(url).contains("client_id=demo-client");
         assertThat(url).contains("response_type=code");
         assertThat(url).contains("state=st").contains("nonce=nc");
+    }
+
+    @Test
+    void logoutUrl_contains_required_params() {
+        // issue #38：登出走 identity RP-Initiated Logout——构造 GET /logout URL：
+        // client_id（identity 凭它解析 post_logout_redirect_uri 白名单）+ post_logout_redirect_uri + state。
+        OidcClient client = new OidcClient(props("http://idp"), RestClient.builder());
+        String url = client.logoutUrl("http://demo.localhost:3000/", "st");
+        assertThat(url).startsWith("http://idp/logout?");
+        assertThat(url).contains("client_id=demo-client");
+        assertThat(url).contains("post_logout_redirect_uri="
+            + URLEncoder.encode("http://demo.localhost:3000/", StandardCharsets.UTF_8));
+        assertThat(url).contains("state=st");
     }
 
     @Test
