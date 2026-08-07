@@ -30,7 +30,14 @@ public class SsoProperties {
     /** SSO cookie 名。 */
     private String cookieName = "sso_session";
 
-    /** SSO cookie 是否标记 Secure（生产必须 true；本地 .localhost 为 secure context 亦可 true）。 */
+    /**
+     * SSO cookie 是否标记 Secure（生产 https 必须 true）。
+     *
+     * <p>注意：{@code .localhost} 仅被 Chrome/Edge 视为 secure context（豁免 Secure-over-http），
+     * Safari/Firefox <strong>不</strong>豁免——local 跑 {@code http://*.localhost} 时，Secure cookie
+     * 会被 Safari/Firefox 拒存，{@code sso_session} 落不了地、SSO 会话不持久（循环回登录页）。
+     * 故 local 需显式 {@code identity.sso.cookie-secure: false}（见 application-local.yml，issue #36）。</p>
+     */
     private boolean cookieSecure = true;
 
     /** 未登录时 /authorize 302 跳转的登录页 URL（identity-web），透传 authorize 参数。 */

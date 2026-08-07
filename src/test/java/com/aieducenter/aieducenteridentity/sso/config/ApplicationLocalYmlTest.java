@@ -33,4 +33,12 @@ class ApplicationLocalYmlTest {
         assertThat(loadLocalYml().getProperty("identity.sso.dev-login.enabled"))
             .isEqualTo(true);
     }
+
+    @Test
+    void given_local_profile_when_read_cookie_secure_then_false() throws IOException {
+        // issue #36：local 跑 http://*.localhost，Safari/Firefox 不豁免 Secure-over-http（仅 Chrome/Edge 豁免），
+        // Secure cookie 会被拒存 → sso_session 落不了地、SSO 会话不持久。故 local 必须关 Secure；prod 走 https 仍 true。
+        assertThat(loadLocalYml().getProperty("identity.sso.cookie-secure"))
+            .isEqualTo(false);
+    }
 }

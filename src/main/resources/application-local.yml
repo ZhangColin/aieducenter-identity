@@ -29,6 +29,10 @@ verification:
 # 本地联调（issue #16/#27）：.localhost 多域 + identity-web 真实登录页
 identity:
   sso:
+    # local 跑 http://*.localhost：Safari/Firefox 不豁免 Secure-over-http（仅 Chrome/Edge 豁免），
+    # Secure cookie 会被拒存 → sso_session 落不了地、SSO 会话不持久（issue #36）。故 local 关 Secure；
+    # prod 走 https 仍用默认 true。
+    cookie-secure: false
     # /authorize 无 cookie → 302 到 identity-web 登录页（:10002，rewrite /api/* → :10001）
     # identity-web 没起时手工兜底：http://identity.localhost:10001/api/auth/dev-login
     login-page-url: http://identity.localhost:10002/login
