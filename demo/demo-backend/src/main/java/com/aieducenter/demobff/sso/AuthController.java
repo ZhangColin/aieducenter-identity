@@ -116,11 +116,11 @@ public class AuthController {
 
     private ResponseCookie.ResponseCookieBuilder txnCookie(String value, long maxAge) {
         return ResponseCookie.from("oauth_txn", value)
-            .httpOnly(true).secure(true).sameSite("Lax").path("/").maxAge(maxAge);
+            .httpOnly(true).secure(props.isCookieSecure()).sameSite("Lax").path("/").maxAge(maxAge);
     }
 
     private ResponseCookie.ResponseCookieBuilder sessionCookie(String value) {
         return ResponseCookie.from("demo_session", value)
-            .httpOnly(true).secure(true).sameSite("Lax").path("/");
+            .httpOnly(true).secure(props.isCookieSecure()).sameSite("Lax").path("/");
     }
 }

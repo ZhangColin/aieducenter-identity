@@ -5,6 +5,10 @@ sso:
   redirect-uri: http://demo.localhost:3000/auth/callback
   scope: openid profile
   app-base-url: http://demo.localhost:3000
+  # local 跑 http://*.localhost：Safari/Firefox 不豁免 Secure-over-http（仅 Chrome/Edge 豁免），
+  # Secure cookie 会被拒存 → oauth_txn 落不了地 → callback 恒 state_mismatch；demo_session 也种不上（issue #37）。
+  # 故 local 关 Secure；prod 走 https 仍用默认 true。
+  cookie-secure: false
 
 cartisan:
   openapi:

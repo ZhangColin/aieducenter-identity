@@ -53,6 +53,25 @@ class AuthControllerTest {
     }
 
     @Test
+    void login_when_cookie_secure_disabled_then_txn_cookie_not_secure() throws Exception {
+        // issue #37：cookieSecure flag 必须透传到 oauth_txn cookie——local 跑 http://*.localhost，
+        // Safari/Firefox 不豁免 Secure-over-http（仅 Chrome/Edge 豁免），Secure cookie 被拒存 →
+        // oauth_txn 落不了地 → callback 恒 state_mismatch。故关 Secure 后 oauth_txn 必须非 Secure。
+        props.setCookieSecure(false);
+        when(oidcClient.authorizeUrl(any(), any())).thenReturn("http://idp/authorize?state=st");
+        mvc.perform(get("/auth/login"))
+            .andExpect(cookie().secure("oauth_txn", false));
+    }
+
+    @Test
+    void login_when_cookie_secure_default_then_txn_cookie_secure() throws Exception {
+        // prod 默认 true（https）——守护默认值不被改坏。
+        when(oidcClient.authorizeUrl(any(), any())).thenReturn("http://idp/authorize?state=st");
+        mvc.perform(get("/auth/login"))
+            .andExpect(cookie().secure("oauth_txn", true));
+    }
+
+    @Test
     void callback_exchanges_code_and_sets_session_cookie() throws Exception {
         when(oidcClient.exchangeCode("c1")).thenReturn(
             new TokenResponse("a", "Bearer", 900L, "r", "IDT"));
@@ -67,6 +86,20 @@ class AuthControllerTest {
             .andExpect(cookie().exists("demo_session"))
             .andReturn();
         assertThat(result.getResponse().getCookie("oauth_txn").getMaxAge()).isZero();
+    }
+
+    @Test
+    void callback_when_cookie_secure_disabled_then_session_cookie_not_secure() throws Exception {
+        // issue #37：demo_session 同样要走 cookieSecure flag——local 关 Secure 才种得上会话 cookie，
+        // 否则即便换 token 成功，Safari/Firefox 下 demo_session 仍落不了地、登录态丢失。
+        props.setCookieSecure(false);
+        when(oidcClient.exchangeCode("c1")).thenReturn(
+            new TokenResponse("a", "Bearer", 900L, "r", "IDT"));
+        mvc.perform(get("/auth/callback")
+                .param("code", "c1").param("state", "st")
+                .cookie(new Cookie("oauth_txn", "st:nc")))
+            .andExpect(status().isFound())
+            .andExpect(cookie().secure("demo_session", false));
     }
 
     @Test
