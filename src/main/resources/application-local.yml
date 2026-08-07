@@ -7,6 +7,7 @@ spring:
     redis:
       host: localhost
       port: 6379
+      password: truth
 
 spring.jpa.show-sql: true
 
@@ -15,8 +16,8 @@ spring.jpa.show-sql: true
 cartisan:
   openapi:
     self:
-      api-key: dev-identity-local-key
-      api-secret: dev-identity-local-secret
+      api-key: identity
+      api-secret: 1rYMkknwQypZ1BQACNjcjW7T5qmwCcHHKOLAA9vKzFY
 
 # dev 固定码（issue #29）：生成处固定、比对路径全真，QA/e2e 不依赖真实收码。
 # prod 配置任一键将被 DevCodeProdGuard 拒绝启动。
@@ -36,8 +37,8 @@ identity:
     # /authorize 无 cookie → 302 到 identity-web 登录页（:10002，rewrite /api/* → :10001）
     # identity-web 没起时手工兜底：http://identity.localhost:10001/api/auth/dev-login
     login-page-url: http://identity.localhost:10002/login
-    # app-registry 本地端口（../aieducenter-app-registry 本地起在 :10011）
+    # app-registry 本地端口（../aieducenter-app-registry 本地起在 :8088，见其 application.yml server.port）
     app-registry:
-      base-url: http://localhost:10011
+      base-url: http://localhost:8088
     dev-login:
       enabled: true

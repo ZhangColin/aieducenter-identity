@@ -1,7 +1,13 @@
 sso:
   issuer: http://identity.localhost:10001
-  client-id: demo-client
-  client-secret: demo-secret-please-change
+  client-id: rhznx-lhn5UoqidVzFuKLjE-5hzHZy0bHyWG_BDBsDM
+  client-secret: WTik0Jd4FW6UjOzFRgXPbToQHOL6dHjb8pn7lP6bBZg
   redirect-uri: http://demo.localhost:3000/auth/callback
   scope: openid profile
   app-base-url: http://demo.localhost:3000
+
+cartisan:
+  openapi:
+    self:
+      api-key: sso-demo
+      api-secret: gpBGhmj0_vW6w70HF_86uJBb6PhlYzigasa497dBw2M
