@@ -11,6 +11,8 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClient.Builder;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import com.aieducenter.demobff.config.SsoProperties;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -51,10 +53,21 @@ public class OidcClient {
         form.add("redirect_uri", props.getRedirectUri());
         form.add("client_id", props.getClientId());
         form.add("client_secret", props.getClientSecret());
-        return tokenClient.post().uri("/token")
-            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-            .body(form)
-            .retrieve().body(TokenResponse.class);
+        try {
+            return tokenClient.post().uri("/token")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
+                .retrieve().body(TokenResponse.class);
+        } catch (RestClientResponseException e) {
+            // identity /token 4xx/5xx：带出状态码 + 协议错误体（{error, error_description}），
+            // 别被 BFF 吞成笼统 exchange_failed（issue #35）。
+            throw new TokenExchangeException(
+                "identity /token 返回 " + e.getStatusCode().value(),
+                e.getStatusCode().value(), e.getResponseBodyAsString(), e);
+        } catch (RestClientException e) {
+            // 连接/超时/2xx 响应解析失败等：无状态码/响应体，带原始原因即可。
+            throw new TokenExchangeException("identity /token 调用失败：" + e.getMessage(), null, null, e);
+        }
     }
 
     /** id_token 的用户声明（不验签：经可信机机通道取得；#17 引入 /jwks 后补验签）。 */

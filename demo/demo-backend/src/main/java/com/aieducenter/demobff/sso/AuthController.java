@@ -4,6 +4,8 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,8 @@ import com.aieducenter.demobff.config.SsoProperties;
  */
 @RestController
 public class AuthController {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private static final int TXN_MAX_AGE = 600;
 
@@ -55,10 +59,15 @@ public class AuthController {
         TokenResponse tokens;
         try {
             tokens = oidcClient.exchangeCode(code);
+        } catch (TokenExchangeException e) {
+            // identity /token 拒绝的具体原因（状态码 + {error, error_description}）打日志排查——
+            // 此前被吞成笼统 exchange_failed，看不到 identity 的拒绝理由（issue #35）。
+            log.warn("/token 换 token 失败：status={}, body={}", e.getHttpStatus(), e.getResponseBody());
+            return rejectExchange(response);
         } catch (RuntimeException e) {
-            // identity /token 非 2xx 等：不让其冒泡成 500，回前端带 error，并清 oauth_txn。
-            response.addHeader("Set-Cookie", txnCookie("", 0).build().toString());
-            return redirect(props.getAppBaseUrl() + "/?error=exchange_failed");
+            // 兜底：未预期的异常也别冒泡成 500（不漏内部细节给前端）。
+            log.warn("/token 换 token 失败（未预期异常）", e);
+            return rejectExchange(response);
         }
         String sessionId = OidcClient.randomToken();
         sessionStore.put(sessionId, new BffSession(tokens.accessToken(), tokens.idToken(), tokens.refreshToken()));
@@ -79,6 +88,12 @@ public class AuthController {
 
     private static ResponseEntity<Void> redirect(String location) {
         return ResponseEntity.status(HttpStatus.FOUND).location(java.net.URI.create(location)).build();
+    }
+
+    /** 换 token 失败的统一兜底：清 oauth_txn、回前端笼统 exchange_failed（具体原因已在日志里）。 */
+    private ResponseEntity<Void> rejectExchange(HttpServletResponse response) {
+        response.addHeader("Set-Cookie", txnCookie("", 0).build().toString());
+        return redirect(props.getAppBaseUrl() + "/?error=exchange_failed");
     }
 
     /**

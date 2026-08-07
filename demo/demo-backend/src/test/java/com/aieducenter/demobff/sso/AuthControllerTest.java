@@ -81,8 +81,11 @@ class AuthControllerTest {
 
     @Test
     void callback_exchange_failure_redirects_with_error() throws Exception {
+        // issue #35：OidcClient 现把 /token 失败包成 TokenExchangeException（带状态码 + 协议错误体）。
         when(oidcClient.exchangeCode("bad")).thenThrow(
-            new org.springframework.web.client.RestClientException("boom"));
+            new TokenExchangeException("identity /token 返回 401", 401,
+                "{\"error\":\"invalid_client\",\"error_description\":\"client 认证失败\"}",
+                new RuntimeException("cause")));
 
         MvcResult result = mvc.perform(get("/auth/callback")
                 .param("code", "bad").param("state", "st")
@@ -92,6 +95,21 @@ class AuthControllerTest {
                 org.hamcrest.Matchers.containsString("error=exchange_failed")))
             .andReturn();
         // 失败也要清 oauth_txn
+        assertThat(result.getResponse().getCookie("oauth_txn").getMaxAge()).isZero();
+    }
+
+    @Test
+    void callback_unexpected_failure_still_redirects_safely() throws Exception {
+        // 兜底分支：未预期的异常也不冒泡成 500，仍安全回 exchange_failed。
+        when(oidcClient.exchangeCode("bad")).thenThrow(new RuntimeException("unexpected"));
+
+        MvcResult result = mvc.perform(get("/auth/callback")
+                .param("code", "bad").param("state", "st")
+                .cookie(new Cookie("oauth_txn", "st:nc")))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location",
+                org.hamcrest.Matchers.containsString("error=exchange_failed")))
+            .andReturn();
         assertThat(result.getResponse().getCookie("oauth_txn").getMaxAge()).isZero();
     }
 

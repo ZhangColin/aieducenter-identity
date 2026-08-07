@@ -1,11 +1,14 @@
 package com.aieducenter.demobff.sso;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -50,6 +53,26 @@ class OidcClientTest {
         server.verify();
         assertThat(t.accessToken()).isEqualTo("a");
         assertThat(t.refreshToken()).isEqualTo("r");
+    }
+
+    @Test
+    void exchangeCode_surfaces_http_status_and_body_on_token_error() {
+        // issue #35：identity /token 的具体拒绝原因（{error, error_description}）不能再被吞成笼统失败。
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        String oidcErrorBody = "{\"error\":\"invalid_client\",\"error_description\":\"client 认证失败\"}";
+        server.expect(once(), requestTo("http://idp/token"))
+            .andRespond(withStatus(HttpStatus.UNAUTHORIZED).body(oidcErrorBody)
+                .contentType(MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> new OidcClient(props("http://idp"), builder).exchangeCode("code1"))
+            .isInstanceOf(TokenExchangeException.class)
+            .satisfies(ex -> {
+                TokenExchangeException tee = (TokenExchangeException) ex;
+                assertThat(tee.getHttpStatus()).isEqualTo(401);
+                assertThat(tee.getResponseBody()).contains("invalid_client");
+            });
+        server.verify();
     }
 
     @Test
