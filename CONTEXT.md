@@ -111,7 +111,7 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - 绑定/解绑（已登录用户）归 `/api/account/*`。
 
 ### 登出（准 SLO）
-- **RP-initiated logout**：应用发起跳 `GET /logout?client_id&post_logout_redirect_uri&state` → 清 SSO 会话 + 清 cookie → 302 回 `post_logout_redirect_uri`（预注册 + 校验，同 redirect_uri）。
+- **RP-initiated logout**：应用发起跳 `GET /logout?client_id&post_logout_redirect_uri&state&id_token_hint` → 清 SSO 会话 + 清 cookie → 302 回 `post_logout_redirect_uri`（**校验独立的 postLogoutRedirectUris 白名单，不复用 redirect_uri**，[ADR-0005](docs/adr/0005-post-logout-redirect-uri-dedicated-allowlist.md)）；`id_token_hint` 接收解析做审计 / cookie 缺失兜底定位、不强制；校验失败时不再返 200 空白、跳 identity-web 兜底页（[ADR-0006](docs/adr/0006-error-response-split-by-caller.md)）。
 - **准 SLO ≤15min**：不主动通知其它应用；靠 refresh 绑 SSO 会话失效 + access 15min 短命自然收尾。完整 back-channel SLO 排后。
 - **改密/封号踢人**：按 userId 清所有 SSO 会话（同登出底层能力）。
 - IdP 发起登出本期不做。
@@ -138,7 +138,8 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 
 ## 安全必需集
 
-- `redirect_uri` **精确匹配**白名单（查 app-registry），不做前缀/通配；不匹配时**不重定向**、渲染错误页（防开放重定向）。
+- `redirect_uri` **精确匹配**登录回调白名单（查 app-registry），不做前缀/通配；不匹配时**不重定向**、跳错误兜底页（防开放重定向）。
+- `post_logout_redirect_uri` 同理精确匹配**独立的 postLogoutRedirectUris 白名单**（不复用 redirect_uri，[ADR-0005](docs/adr/0005-post-logout-redirect-uri-dedicated-allowlist.md)）；不匹配时不重定向。
 - `code` **一次性 + 60s + 绑 client/redirect_uri**，换完即删。
 - `state` 防 CSRF（消费方生成 + 回调比对）；`nonce` 防重放（id_token 回带）。
 - PKCE **支持不强制**（BFF 机密客户端靠 client_secret）。
@@ -146,8 +147,11 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 
 ## 错误处理（OIDC 标准）
 
-- `/authorize` 重定向前错（client_id/redirect_uri 无效或缺）→ **不重定向**，渲染错误页。
+- **按调用方分流**（[ADR-0006](docs/adr/0006-error-response-split-by-caller.md)）：浏览器导航类（`/authorize` `/logout`）出错 → 302 跳 identity-web 兜底页（后端纯 API、UI 全交 identity-web）；机机类（`/token` `/userinfo` `/jwks` `/discovery`）出错 → 维持 RFC6749 `{error, error_description}` JSON。
+- `/authorize` 重定向前错（client_id/redirect_uri 无效或缺）→ **不重定向**，跳兜底页。
 - `/authorize` 其它错 → 302 回 `redirect_uri?error&state`；用户取消 → `error=access_denied`。
+- `/logout` 校验失败（post_logout_redirect_uri 未登记）→ 跳兜底页（提示已登出但未能自动返回），不再返 200 空白。
+- infra 故障（app-registry 不可达抖动降级）→ `temporarily_unavailable`(503)，不混 `unauthorized_client`(400)。
 - `/token` 错 → 400 + `invalid_grant` / `invalid_client`。
 - 登录/注册失败（凭据错、验证码错、账号锁定）→ 留登录页显示，不回业务应用。
 
@@ -176,7 +180,7 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - **argon2 + BouncyCastle**：两端统一用 `spring-security-crypto` 的 `Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()`（hash 自描述、两端互验）。该 encoder 运行时走 BouncyCastle，`spring-security-crypto` 将其声明为可选、Boot 3.4 BOM 不管理版本，故 identity 与 app-registry 都显式钉 `bcprov-jdk18on:1.78.1`（匹配 spring-security 6.4.x）。~~「argon2 不加 BouncyCastle」~~ 这句过时——encoder 离了 BC 会 NoClassDefFoundError。
 - **组合状态由 app-registry 算好返回**：`active = client.active && app.active`；任一禁用 → 返回 `active=false` **且 `clientSecretHash=null`**（连 hash 都不给）。identity 拿到 null / active=false 自然拒办 SSO，**不二次查 app**。
 - identity 侧：client 查询端口（`sso.domain.client`）→ **单一**远程适配器 `RemoteSsoClientRepositoryAdapter`（`sso.infrastructure.client`，#30 解析 / #31 签名 / #32 容错）。**无 stub、无 profile 分支**——dev/test/prod 同走远程；`StubSsoClientRepositoryAdapter` + `SsoProperties.stub-*` 配置 + `BCryptClientSecretVerifierAdapter` 已随 #30 删除；`Argon2ClientSecretVerifierAdapter` 替 BCrypt；app-registry `base-url` 配进 `SsoProperties.app-registry.base-url`（test 指向 WireMock）。
-- **本地缓存（#30 基础 + #32 完整韧性）**：Caffeine 按 clientId 缓存 `SsoClientCacheEntry`（值 + 写入时刻），`maximumSize` 上限、**无时间淘汰**（last-known-good 尽量驻留以兜底）。① **fresh 窗口 30min**（写入起算）命中缓存不打远程——`/authorize` 高频查询不轰 app-registry；② **负面缓存**——`active=false` / `clientSecretHash=null` / **404「查不到」** 入缓存（`Optional.empty()`），禁用/不存在的 client 不反复打 app-registry；③ **抖动降级**——app-registry 抖动（5xx/连接失败/超时/其它非 404 错）时 **有过期缓存（哪怕 negative）就兜底**（值即最近一次成功解析、不返脏数据）、**无缓存就拒办**（返 empty，上层转 `invalid_client`/`unauthorized_client`），不抛 500。404 不视为抖动（是「查不到」的稳定结论，走负面缓存）。fresh/stale 判定走注入的 `Clock`（测试 `MutableClock` 推进时间确定性触发过期）。
+- **本地缓存（#30 基础 + #32 完整韧性）**：Caffeine 按 clientId 缓存 `SsoClientCacheEntry`（值 + 写入时刻），`maximumSize` 上限、**无时间淘汰**（last-known-good 尽量驻留以兜底）。① **fresh 窗口 30min**（写入起算）命中缓存不打远程——`/authorize` 高频查询不轰 app-registry；② **负面缓存**——`active=false` / `clientSecretHash=null` / **404「查不到」** 入缓存（`Optional.empty()`），禁用/不存在的 client 不反复打 app-registry；③ **抖动降级**——app-registry 抖动（5xx/连接失败/超时/其它非 404 错）时 **有过期缓存（哪怕 negative）就兜底**（值即最近一次成功解析、不返脏数据）、**无缓存就拒办**（返 empty，上层转 `invalid_client`/`unauthorized_client`；属 infra 故障，热路径上按 [ADR-0006](docs/adr/0006-error-response-split-by-caller.md) 改 `temporarily_unavailable`(503)、与 client 配置错区分），不抛 500。404 不视为抖动（是「查不到」的稳定结论，走负面缓存）。fresh/stale 判定走注入的 `Clock`（测试 `MutableClock` 推进时间确定性触发过期）。
 - secret 认证：`client_secret_post`，argon2 `matches()` 比对（hash-only，永不拿明文）。
 - **应用管理/登记**（注册 app、加 SSO facet、填 redirect_uri、取 client_secret）在 app-registry / 统一后台，**不在本服务**。
 
@@ -188,6 +192,8 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - [ADR-0002](docs/adr/0002-token-format-jwt.md) token = JWT
 - [ADR-0003](docs/adr/0003-sso-satoken-self-built-oidc.md) SSO = Sa-Token 自搭 OIDC（**「会话引擎继续 Sa-Token」被 ADR-0004 修订**）
 - [ADR-0004](docs/adr/0004-drop-satoken-single-sso-session.md) **弃 sa-token / 一套 SSO 会话 / token 归 /token**
+- [ADR-0005](docs/adr/0005-post-logout-redirect-uri-dedicated-allowlist.md) post_logout_redirect_uri 独立白名单（不复用 redirect_uri）
+- [ADR-0006](docs/adr/0006-error-response-split-by-caller.md) 端点错误响应按调用方分流（浏览器类跳 identity-web 兜底页 / 机机类 RFC6749 JSON）
 
 ## 构建分期（重排；旧 issue #5 等及 token-in-login 设计废弃）
 
@@ -207,6 +213,10 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - [x] 登出 = 准 SLO（≤15min）+ RP-initiated；完整 back-channel SLO 排后
 - [x] 开发测试 = `.localhost` + demo 消费方 + dev SSO + 消费方认证解耦
 - [x] 安全集 + 错误框架（OIDC 标准）
+- [x] post_logout_redirect_uri = 独立白名单、不复用 redirect_uri（ADR-0005）
+- [x] id_token_hint = 接收解析做审计 / cookie 缺失兜底定位、不强制（不做完整免确认）
+- [x] discovery 补 end_session_endpoint + front/back-channel_logout_supported + post_logout_redirect_uris_supported
+- [x] 端点错误响应 = 按调用方分流（ADR-0006）
 - [x] 应用管理/登记 = 不在本服务，消费 app-registry
 - [x] #28 契约冲突 = 前端接码 UI（c-revised：email/phone 注册登录 + 图形码一次做全）+ dev 固定码配套；不做缺码放行
 - [x] 验证码通道 = 分期：接口先行 + Log 占位 + dev 固定码（生成处固定、prod 拒启）
