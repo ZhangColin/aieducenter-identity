@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientRepository;
+import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
 import com.cartisan.core.stereotype.Adapter;
 import com.cartisan.core.stereotype.PortType;
 import com.cartisan.openapi.client.OpenApiClient;
@@ -36,8 +38,9 @@ import com.github.benmanes.caffeine.cache.Cache;
  *   <li><b>负面缓存</b>：{@code active=false} / {@code clientSecretHash=null} / {@code 404「查不到」} 也缓存
  *       （{@code Optional.empty()}），禁用/不存在的 client 不反复打 app-registry。</li>
  *   <li><b>抖动降级</b>：app-registry 抖动（5xx/连接失败/超时/其它非 404 错）时——<b>有过期缓存（哪怕 negative）就兜底</b>
- *       （值即最近一次成功解析，不返脏数据）、<b>无缓存就拒办</b>（返 empty，上层转 {@code unauthorized_client}/
- *       {@code invalid_client}），不抛 500。404 不视为抖动（是「查不到」的稳定结论，走负面缓存）。</li>
+ *       （值即最近一次成功解析，不返脏数据）、<b>无缓存就拒办</b>（抛 {@link SsoError#TEMPORARILY_UNAVAILABLE}(503)，
+ *       ADR-0006：infra 故障 ≠ client 配置错；上层 {@code OidcExceptionHandler} 渲染 {@code {error:temporarily_unavailable}}），
+ *       不抛 500。404 不视为抖动（是「查不到」的稳定结论，走负面缓存）。</li>
  * </ul>
  *
  * @since 0.1.0
@@ -104,16 +107,17 @@ public class RemoteSsoClientRepositoryAdapter implements SsoClientRepository {
     }
 
     /**
-     * 抖动降级：有过期缓存（哪怕 negative）就兜底（值即最近一次成功解析、不返脏数据）、无缓存就拒办（empty）。
-     * 不抛——上层（SsoClientValidationService）据 empty 转 unauthorized_client/invalid_client，不抛 500。
+     * 抖动降级：有过期缓存（哪怕 negative）就兜底（值即最近一次成功解析、不返脏数据）、无缓存就拒办
+     * （抛 {@link OidcException}{@code (TEMPORARILY_UNAVAILABLE)}，503；ADR-0006——与 client 配置错区分）。
+     * 404 不进本路径（是「查不到」的稳定结论，已由调用方走负面缓存）。
      */
     private Optional<SsoClient> serveStaleOrReject(String clientId, SsoClientCacheEntry resident, RuntimeException cause) {
         logger.warn("app-registry 拉取 SsoClient 失败，clientId=" + clientId
-            + (resident != null ? "，用过期缓存兜底" : "，无缓存拒办"), cause);
+            + (resident != null ? "，用过期缓存兜底" : "，无缓存拒办（temporarily_unavailable）"), cause);
         if (resident != null) {
             return resident.value();
         }
-        return Optional.empty();
+        throw new OidcException(SsoError.TEMPORARILY_UNAVAILABLE, "app-registry 暂时不可用，且无缓存可兜底");
     }
 
     private Optional<SsoClient> fetch(String clientId) {

@@ -29,7 +29,9 @@ public enum SsoError implements CodeMessage {
     /** 不支持的 grant_type。 */
     UNSUPPORTED_GRANT_TYPE("unsupported_grant_type", 400, "不支持的 grant_type"),
     /** access token 无效/过期/验签失败——/userinfo 用，401（RFC 6750）。 */
-    INVALID_TOKEN("invalid_token", 401, "访问令牌无效或已过期");
+    INVALID_TOKEN("invalid_token", 401, "访问令牌无效或已过期"),
+    /** 授权服务器暂时不可用（如依赖的 app-registry 抖动且无缓存兜底）——RFC 6749 §4.1.2.1 / §5.2，503。 */
+    TEMPORARILY_UNAVAILABLE("temporarily_unavailable", 503, "服务暂时不可用");
 
     private final String code;
     private final int httpStatus;

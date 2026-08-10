@@ -37,8 +37,9 @@ import jakarta.servlet.http.Cookie;
  * <ul>
  *   <li>同一 client 两次 /authorize → bootstrap stub 仅命中一次（fresh 缓存，#30）；</li>
  *   <li>{@code active=false} 的 client 被拒办，且二次 /authorize 不再命中 WireMock（负面缓存，#32 AC#1）；</li>
+ *   <li>app-registry 返 404「查不到」→ 走负面缓存、/authorize 拒办 {@code unauthorized_client}(400)（稳定结论，非抖动，#42）；</li>
  *   <li>app-registry 抖动（500）+ 有过期缓存 → 过期兜底、/authorize 仍正常发 code（不拒办、不抛 500，#32 AC#2）；</li>
- *   <li>app-registry 抖动（500）+ 无缓存 → 拒办（400 unauthorized_client，非 500，#32 AC#2）。</li>
+ *   <li>app-registry 抖动（500）+ 无缓存 → 拒办 {@code temporarily_unavailable}(503)（infra 故障 ≠ client 配置错，#42 / ADR-0006）。</li>
  * </ul>
  * 命中计数用 WireMock 请求 journal 的 before/after delta（journal 跨测试累积，故取 delta 而非绝对值）。</p>
  */
@@ -46,6 +47,7 @@ import jakarta.servlet.http.Cookie;
 class SsoClientCacheIntegrationTest extends SsoIntegrationTestBase {
 
     private static final String DISABLED_CLIENT_ID = "disabled-client";
+    private static final String UNKNOWN_CLIENT_ID = "unknown-client";
     private static final String STALE_CLIENT_ID = "stale-client";
     private static final String FLAKY_CLIENT_ID = "flaky-client";
 
@@ -134,16 +136,39 @@ class SsoClientCacheIntegrationTest extends SsoIntegrationTestBase {
     }
 
     @Test
-    void given_no_cache_and_app_registry_jitter_when_authorize_then_rejected_not_500() throws Exception {
-        stubClientError(FLAKY_CLIENT_ID, 500);
-        int servedBefore = bootstrapServedCount(FLAKY_CLIENT_ID);
+    void given_app_registry_404_when_authorize_then_unauthorized_client_and_negatively_cached() throws Exception {
+        stubClientError(UNKNOWN_CLIENT_ID, 404);
+        int servedBefore = bootstrapServedCount(UNKNOWN_CLIENT_ID);
 
-        // 无缓存 + 抖动 → 拒办（unauthorized_client 400），不抛 500
+        // 404「查不到」是稳定结论（非抖动）→ 走负面缓存 → unauthorized_client(400)
         mvc.perform(get("/authorize")
-                .param("client_id", FLAKY_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
+                .param("client_id", UNKNOWN_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
                 .param("state", "s1"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.error").value("unauthorized_client"));
+        mvc.perform(get("/authorize")
+                .param("client_id", UNKNOWN_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
+                .param("state", "s2"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("unauthorized_client"));
+
+        int servedAfter = bootstrapServedCount(UNKNOWN_CLIENT_ID);
+        assertThat(servedAfter - servedBefore)
+            .as("404 负面缓存：二次 /authorize 不再命中 app-registry")
+            .isEqualTo(1);
+    }
+
+    @Test
+    void given_no_cache_and_app_registry_jitter_when_authorize_then_temporarily_unavailable_503() throws Exception {
+        stubClientError(FLAKY_CLIENT_ID, 500);
+        int servedBefore = bootstrapServedCount(FLAKY_CLIENT_ID);
+
+        // 无缓存 + 抖动（infra 故障）→ temporarily_unavailable(503)，不再误报 unauthorized_client(400)
+        mvc.perform(get("/authorize")
+                .param("client_id", FLAKY_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
+                .param("state", "s1"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.error").value("temporarily_unavailable"));
 
         int servedAfter = bootstrapServedCount(FLAKY_CLIENT_ID);
         assertThat(servedAfter - servedBefore)

@@ -1,6 +1,7 @@
 package com.aieducenter.aieducenteridentity.sso.infrastructure.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
@@ -21,6 +22,8 @@ import org.mockito.Mockito;
 
 import com.aieducenter.aieducenteridentity.sso.config.SsoProperties;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
+import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
 import com.aieducenter.aieducenteridentity.test.MutableClock;
 import com.cartisan.openapi.client.OpenApiClient;
 import com.cartisan.openapi.client.OpenApiClientException;
@@ -35,7 +38,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
  * <ul>
  *   <li>成功映射、fresh 窗口命中缓存省远程；</li>
  *   <li>active=false / 404「查不到」负面缓存（二次不打远程）；</li>
- *   <li>抖动（5xx/网络/超时）+ 无缓存 → 返 empty 拒办、不缓存、下次重试；</li>
+ *   <li>抖动（5xx/网络/超时）+ 无缓存 → 抛 {@code temporarily_unavailable}(503) 拒办、不缓存、下次重试（ADR-0006）；</li>
  *   <li>抖动 + 有过期缓存 → 兜底返回过期值（== 最近一次成功解析，不返脏数据）；</li>
  *   <li>过期 + 远程恢复 → 刷新成新值（不用 stale）；</li>
  *   <li>过期负面缓存 + 抖动 → 兜底仍拒办（empty）。</li>
@@ -163,21 +166,31 @@ class RemoteSsoClientRepositoryAdapterTest {
     }
 
     @Test
-    void given_server_error_and_no_cache_when_find_then_empty_and_retries() {
+    void given_server_error_and_no_cache_when_find_then_temporarily_unavailable_and_retries() {
         stubServerError();
 
-        assertThat(adapter.findByClientId(CLIENT_ID)).isEmpty();
-        assertThat(adapter.findByClientId(CLIENT_ID)).isEmpty(); // 抖动不缓存 → 再次打远程
+        // 无缓存 + 抖动 → 抛 temporarily_unavailable(503) 拒办（ADR-0006：infra 故障 ≠ client 配置错）
+        assertThatThrownBy(() -> adapter.findByClientId(CLIENT_ID))
+            .isInstanceOf(OidcException.class)
+            .extracting(ex -> ((OidcException) ex).error())
+            .isEqualTo(SsoError.TEMPORARILY_UNAVAILABLE);
+        // 抖动不缓存（不沉淀负面缓存）→ 再次仍打远程、仍抛
+        assertThatThrownBy(() -> adapter.findByClientId(CLIENT_ID))
+            .isInstanceOf(OidcException.class);
 
         verify(openApiClient, times(2)).get(eq(BOOTSTRAP_URL), any(TypeReference.class));
     }
 
     @Test
-    void given_network_failure_and_no_cache_when_find_then_empty_and_retries() {
+    void given_network_failure_and_no_cache_when_find_then_temporarily_unavailable_and_retries() {
         stubNetworkFailure();
 
-        assertThat(adapter.findByClientId(CLIENT_ID)).isEmpty();
-        assertThat(adapter.findByClientId(CLIENT_ID)).isEmpty(); // 抖动不缓存 → 再次打远程
+        assertThatThrownBy(() -> adapter.findByClientId(CLIENT_ID))
+            .isInstanceOf(OidcException.class)
+            .extracting(ex -> ((OidcException) ex).error())
+            .isEqualTo(SsoError.TEMPORARILY_UNAVAILABLE);
+        assertThatThrownBy(() -> adapter.findByClientId(CLIENT_ID))
+            .isInstanceOf(OidcException.class);
 
         verify(openApiClient, times(2)).get(eq(BOOTSTRAP_URL), any(TypeReference.class));
     }
