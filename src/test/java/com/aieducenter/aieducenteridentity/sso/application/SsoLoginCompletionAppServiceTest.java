@@ -35,7 +35,7 @@ class SsoLoginCompletionAppServiceTest {
         sessionRepository, codeService, profileRepository);
 
     private final SsoClient client = new SsoClient("demo-client", "Demo", "hash",
-        java.util.Set.of(REDIRECT_URI), java.util.Set.of("openid"), java.util.Set.of("authorization_code"), true);
+        java.util.Set.of(REDIRECT_URI), java.util.Set.of(), java.util.Set.of("openid"), java.util.Set.of("authorization_code"), true);
 
     private final Account account = Account.restore(900L, "user@aieducenter.com", null, "hash",
         AccountStatus.ACTIVE, false, null);

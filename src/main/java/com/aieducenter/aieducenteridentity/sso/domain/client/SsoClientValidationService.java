@@ -5,11 +5,12 @@ import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
 import com.cartisan.core.stereotype.DomainService;
 
 /**
- * SSO 消费方校验领域服务——client 存活 + redirect_uri 精确匹配白名单的单一真相源（CONTEXT 安全集）。
+ * SSO 消费方校验领域服务——client 存活 + redirect_uri / post_logout_redirect_uri 精确匹配白名单的单一真相源
+ * （CONTEXT 安全集）。
  *
  * <p>{@code /authorize} 与 {@code /api/auth/login} 两处发 code 前的 client/redirect 校验共用本服务，
- * 避免重复实现分叉（安全关键逻辑须只有一份）。redirect_uri 精确匹配、不做前缀/通配；不匹配时不重定向
- * （防开放重定向），抛 {@link OidcException}。</p>
+ * 避免重复实现分叉（安全关键逻辑须只有一份）。redirect_uri 与 post_logout_redirect_uri 各走独立白名单
+ * （ADR-0005），均精确匹配、不做前缀/通配；不匹配时不重定向（防开放重定向），抛 {@link OidcException}。</p>
  *
  * @since 0.1.0
  */
@@ -34,7 +35,7 @@ public class SsoClientValidationService {
     }
 
     /**
-     * 校验 redirect_uri 在白名单内（精确匹配）；缺失/不在白名单 → {@link SsoError#INVALID_REQUEST}。
+     * 校验 redirect_uri 在登录回调白名单内（精确匹配）；缺失/不在白名单 → {@link SsoError#INVALID_REQUEST}。
      */
     public void requireRedirectUri(SsoClient client, String redirectUri) {
         if (redirectUri == null || redirectUri.isBlank()) {
@@ -42,6 +43,19 @@ public class SsoClientValidationService {
         }
         if (!client.hasRedirectUri(redirectUri)) {
             throw new OidcException(SsoError.INVALID_REQUEST, "redirect_uri 未登记");
+        }
+    }
+
+    /**
+     * 校验 post_logout_redirect_uri 在登出回跳白名单内（精确匹配，不复用 redirect_uri，ADR-0005）；
+     * 缺失/不在白名单 → {@link SsoError#INVALID_REQUEST}。
+     */
+    public void requirePostLogoutRedirectUri(SsoClient client, String postLogoutRedirectUri) {
+        if (postLogoutRedirectUri == null || postLogoutRedirectUri.isBlank()) {
+            throw new OidcException(SsoError.INVALID_REQUEST, "post_logout_redirect_uri 缺失");
+        }
+        if (!client.hasPostLogoutRedirectUri(postLogoutRedirectUri)) {
+            throw new OidcException(SsoError.INVALID_REQUEST, "post_logout_redirect_uri 未登记");
         }
     }
 }

@@ -46,6 +46,7 @@ public class WireMockAppRegistryConfig {
             .encode(IdentityIntegrationTestBase.CLIENT_SECRET);
         SsoClientInfo info = new SsoClientInfo(IdentityIntegrationTestBase.CLIENT_ID, 1L, "Demo 消费方", hash,
             List.of(IdentityIntegrationTestBase.REDIRECT_URI),
+            List.of(IdentityIntegrationTestBase.POST_LOGOUT_REDIRECT_URI),
             Set.of("openid", "profile", "email", "phone"),
             Set.of("authorization_code", "refresh_token"), true);
         String body;

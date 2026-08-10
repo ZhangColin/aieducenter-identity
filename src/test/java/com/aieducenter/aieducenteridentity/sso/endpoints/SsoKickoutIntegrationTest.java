@@ -110,9 +110,9 @@ class SsoKickoutIntegrationTest extends SsoIntegrationTestBase {
             .andExpect(status().isOk()).andReturn();
         String refresh = JsonPath.read(token.getResponse().getContentAsString(), "$.refresh_token");
 
-        // 登出（清 SSO 会话）
+        // 登出（清 SSO 会话）；post_logout_redirect_uri 走登出白名单（POST_LOGOUT_REDIRECT_URI，ADR-0005）
         mvc.perform(get("/logout").param("client_id", CLIENT_ID)
-                .param("post_logout_redirect_uri", REDIRECT_URI).cookie(cookie))
+                .param("post_logout_redirect_uri", POST_LOGOUT_REDIRECT_URI).cookie(cookie))
             .andExpect(status().isFound());
 
         // refresh grant → 会话已失效 → invalid_grant（准 SLO）

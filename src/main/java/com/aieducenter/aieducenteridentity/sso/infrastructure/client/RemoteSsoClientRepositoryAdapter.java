@@ -137,14 +137,18 @@ public class RemoteSsoClientRepositoryAdapter implements SsoClientRepository {
     }
 
     private static SsoClient toSsoClient(SsoClientInfo info) {
-        // SsoClient 构造要求 redirectUris 非 null（否则 NPE），scopes/grants 容 null（自兜底 Set.of()），
-        // 故仅对 redirectUris 做远程脏数据兜底——非防御不对称，是对齐端口契约的不变量。
+        // SsoClient 构造要求 redirectUris 非 null（否则 NPE），scopes/grants/postLogoutRedirectUris 容 null
+        // （自兜底 Set.of()），故仅对 redirectUris 做远程脏数据兜底——非防御不对称，是对齐端口契约的不变量。
+        // postLogoutRedirectUris 容 null：app-registry 未下发该字段时（#18 未落地）为空集 = 不跳转（ADR-0005 兜底）。
         Set<String> redirectUris = info.redirectUris() == null ? Set.of() : Set.copyOf(info.redirectUris());
+        Set<String> postLogoutRedirectUris =
+            info.postLogoutRedirectUris() == null ? Set.of() : Set.copyOf(info.postLogoutRedirectUris());
         return new SsoClient(
             info.clientId(),
             info.clientName(),
             info.clientSecretHash(),
             redirectUris,
+            postLogoutRedirectUris,
             info.scopes(),
             info.grants(),
             info.active());

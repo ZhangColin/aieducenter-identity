@@ -48,6 +48,8 @@ public abstract class IdentityIntegrationTestBase {
     protected static final String CLIENT_ID = "demo-client";
     protected static final String CLIENT_SECRET = "demo-secret-please-change";
     protected static final String REDIRECT_URI = "https://demo.localhost/auth/callback";
+    /** demo 登出回跳落点（首页，与登录回调 REDIRECT_URI 分属两个白名单，ADR-0005）。 */
+    protected static final String POST_LOGOUT_REDIRECT_URI = "https://demo.localhost/";
 
     /** app-registry base-url 指向 WireMock（#30）。 */
     @DynamicPropertySource

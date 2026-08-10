@@ -154,7 +154,7 @@ class SsoClientCacheIntegrationTest extends SsoIntegrationTestBase {
     /** 注册 200 stub 返回预置 SsoClientInfo（redirectUris 白名单含 REDIRECT_URI），返回 mapping 以便后续 removeStub。 */
     private StubMapping stubClient(String clientId, boolean active, String hash) {
         SsoClientInfo info = new SsoClientInfo(clientId, 99L, clientId, hash,
-            List.of(REDIRECT_URI), Set.of("openid"), Set.of("authorization_code"), active);
+            List.of(REDIRECT_URI), List.of(), Set.of("openid"), Set.of("authorization_code"), active);
         String body;
         try {
             body = objectMapper.writeValueAsString(ApiResponse.ok(info));

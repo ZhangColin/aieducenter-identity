@@ -31,7 +31,7 @@ class SsoAuthorizeAppServiceTest {
         new SsoAuthorizeAppService(clientValidation, sessionRepository, codeService, properties);
 
     private final SsoClient client = new SsoClient(CLIENT_ID, "Demo", "hash",
-        java.util.Set.of(REDIRECT_URI), java.util.Set.of("openid"), java.util.Set.of("authorization_code"), true);
+        java.util.Set.of(REDIRECT_URI), java.util.Set.of(), java.util.Set.of("openid"), java.util.Set.of("authorization_code"), true);
 
     @BeforeEach
     void stubClient() {

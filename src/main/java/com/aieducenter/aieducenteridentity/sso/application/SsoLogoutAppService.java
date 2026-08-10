@@ -50,8 +50,8 @@ public class SsoLogoutAppService {
     /**
      * 解析 post_logout_redirect_uri：缺失/未登记/无 client_id → 不重定向（防开放重定向，CONTEXT 安全集）。
      *
-     * <p>白名单复用 redirect_uri 集合（CONTEXT「同 redirect_uri」）；校验抛 {@link OidcException} 时吞掉、返回 null
-     * ——登出已完成，仅跳转被拒。</p>
+     * <p>走独立的 {@code postLogoutRedirectUris} 白名单（ADR-0005，不再复用 {@code redirectUris}）；
+     * 校验抛 {@link OidcException} 时吞掉、返回 null——登出已完成，仅跳转被拒。</p>
      */
     private String resolvePostLogoutRedirect(String clientId, String postLogoutRedirectUri, String state) {
         if (postLogoutRedirectUri == null || postLogoutRedirectUri.isBlank()) {
@@ -59,7 +59,7 @@ public class SsoLogoutAppService {
         }
         try {
             SsoClient client = clientValidation.requireActiveClient(clientId);
-            clientValidation.requireRedirectUri(client, postLogoutRedirectUri);
+            clientValidation.requirePostLogoutRedirectUri(client, postLogoutRedirectUri);
         } catch (OidcException ex) {
             // 校验失败：登出仍完成，但不重定向（防开放重定向）
             return null;

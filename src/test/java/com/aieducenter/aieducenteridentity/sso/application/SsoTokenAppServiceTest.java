@@ -53,7 +53,7 @@ class SsoTokenAppServiceTest {
         clientRepository, secretVerifier, codeStore, tokenIssuer, accountRepository, profileRepository, sessionRepository);
 
     private final SsoClient client = new SsoClient(CLIENT_ID, "Demo", "hash",
-        java.util.Set.of(REDIRECT_URI), java.util.Set.of("openid"),
+        java.util.Set.of(REDIRECT_URI), java.util.Set.of(), java.util.Set.of("openid"),
         java.util.Set.of("authorization_code", "refresh_token"), true);
 
     @BeforeEach

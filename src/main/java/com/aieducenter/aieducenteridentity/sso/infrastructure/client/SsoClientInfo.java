@@ -13,11 +13,13 @@ import java.util.Set;
  * @param clientId         OIDC client_id
  * @param appId            所属应用 id（identity 不用，仅契约透传）
  * @param clientName       client 名（登录页「登录到 XXX」）
- * @param clientSecretHash client_secret 的 argon2 hash（仅 active 时返；否则 null）
- * @param redirectUris     回调地址列表（精确匹配白名单）
- * @param scopes           授权范围
- * @param grants           授权类型
- * @param active           组合生效 = client.active && app.active
+ * @param clientSecretHash      client_secret 的 argon2 hash（仅 active 时返；否则 null）
+ * @param redirectUris          登录回调地址列表（精确匹配白名单）
+ * @param postLogoutRedirectUris 登出回跳地址列表（精确匹配白名单，与 redirectUris 平级，ADR-0005）；
+ *                               app-registry 未下发时为 null——identity 侧兜底为空集（白名单为空 = 不跳转）
+ * @param scopes                授权范围
+ * @param grants                授权类型
+ * @param active                组合生效 = client.active && app.active
  * @since 0.1.0
  */
 public record SsoClientInfo(
@@ -26,6 +28,7 @@ public record SsoClientInfo(
     String clientName,
     String clientSecretHash,
     List<String> redirectUris,
+    List<String> postLogoutRedirectUris,
     Set<String> scopes,
     Set<String> grants,
     boolean active) {

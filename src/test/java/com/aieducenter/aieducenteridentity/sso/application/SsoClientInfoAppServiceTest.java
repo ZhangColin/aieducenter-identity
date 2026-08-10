@@ -28,7 +28,7 @@ class SsoClientInfoAppServiceTest {
     @Test
     void given_active_client_when_client_info_then_minimal_fields_mapped() {
         SsoClient client = new SsoClient(CLIENT_ID, "Demo 消费方", "secret-hash",
-            Set.of("https://demo.localhost/auth/callback"), Set.of("openid"), Set.of("authorization_code"), true);
+            Set.of("https://demo.localhost/auth/callback"), Set.of(), Set.of("openid"), Set.of("authorization_code"), true);
         when(clientRepository.findByClientId(CLIENT_ID)).thenReturn(Optional.of(client));
 
         ClientInfoResponse response = service.clientInfo(CLIENT_ID);

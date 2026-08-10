@@ -16,12 +16,14 @@ class SsoClientValidationServiceTest {
 
     private static final String CLIENT_ID = "demo-client";
     private static final String REDIRECT_URI = "https://demo.localhost/auth/callback";
+    private static final String POST_LOGOUT_URI = "https://demo.localhost/";
 
     private final SsoClientRepository clientRepository = mock(SsoClientRepository.class);
     private final SsoClientValidationService service = new SsoClientValidationService(clientRepository);
 
     private final SsoClient client = new SsoClient(CLIENT_ID, "Demo", "hash",
-        java.util.Set.of(REDIRECT_URI), java.util.Set.of("openid"), java.util.Set.of("authorization_code"), true);
+        java.util.Set.of(REDIRECT_URI), java.util.Set.of(POST_LOGOUT_URI),
+        java.util.Set.of("openid"), java.util.Set.of("authorization_code"), true);
 
     @Test
     void given_registered_active_client_when_requireActiveClient_then_returned() {
@@ -61,6 +63,36 @@ class SsoClientValidationServiceTest {
     @Test
     void given_redirect_not_whitelisted_when_requireRedirectUri_then_invalid_request_no_redirect() {
         assertThatThrownBy(() -> service.requireRedirectUri(client, "https://evil.example/callback"))
+            .isInstanceOf(OidcException.class)
+            .extracting(ex -> ((OidcException) ex).error())
+            .isEqualTo(SsoError.INVALID_REQUEST);
+    }
+
+    @Test
+    void given_whitelisted_post_logout_uri_when_requirePostLogoutRedirectUri_then_ok() {
+        service.requirePostLogoutRedirectUri(client, POST_LOGOUT_URI); // no exception
+    }
+
+    @Test
+    void given_missing_post_logout_uri_when_requirePostLogoutRedirectUri_then_invalid_request() {
+        assertThatThrownBy(() -> service.requirePostLogoutRedirectUri(client, null))
+            .isInstanceOf(OidcException.class)
+            .extracting(ex -> ((OidcException) ex).error())
+            .isEqualTo(SsoError.INVALID_REQUEST);
+    }
+
+    @Test
+    void given_post_logout_uri_only_in_redirect_uris_when_requirePostLogoutRedirectUri_then_invalid_request() {
+        // 行为变更核心守卫（ADR-0005）：登录回调 REDIRECT_URI 不在登出白名单 → 拒绝（不再复用 redirect_uri 白名单）
+        assertThatThrownBy(() -> service.requirePostLogoutRedirectUri(client, REDIRECT_URI))
+            .isInstanceOf(OidcException.class)
+            .extracting(ex -> ((OidcException) ex).error())
+            .isEqualTo(SsoError.INVALID_REQUEST);
+    }
+
+    @Test
+    void given_post_logout_uri_not_whitelisted_when_requirePostLogoutRedirectUri_then_invalid_request() {
+        assertThatThrownBy(() -> service.requirePostLogoutRedirectUri(client, "https://evil.example/logout-cb"))
             .isInstanceOf(OidcException.class)
             .extracting(ex -> ((OidcException) ex).error())
             .isEqualTo(SsoError.INVALID_REQUEST);

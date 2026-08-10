@@ -66,7 +66,8 @@ class RemoteSsoClientRepositoryAdapterTest {
 
     private static SsoClientInfo info(String clientId, boolean active, String hash) {
         return new SsoClientInfo(clientId, 7L, "Demo 消费方", hash,
-            List.of("https://demo.localhost/auth/callback"), Set.of("openid", "email"),
+            List.of("https://demo.localhost/auth/callback"), List.of("https://demo.localhost/"),
+            Set.of("openid", "email"),
             Set.of("authorization_code", "refresh_token"), active);
     }
 
@@ -109,9 +110,24 @@ class RemoteSsoClientRepositoryAdapterTest {
         assertThat(client.clientName()).isEqualTo("Demo 消费方");
         assertThat(client.clientSecretHash()).isEqualTo("$argon2id$hash");
         assertThat(client.redirectUris()).containsExactly("https://demo.localhost/auth/callback");
+        assertThat(client.postLogoutRedirectUris()).containsExactly("https://demo.localhost/");
         assertThat(client.scopes()).containsExactlyInAnyOrder("openid", "email");
         assertThat(client.grants()).containsExactlyInAnyOrder("authorization_code", "refresh_token");
         assertThat(client.active()).isTrue();
+    }
+
+    @Test
+    void given_info_without_post_logout_uris_when_find_then_mapped_to_empty_set() {
+        // app-registry 未下发 postLogoutRedirectUris（#18 未落地）→ null 兜底为空集（白名单为空 = 不跳转，ADR-0005）
+        SsoClientInfo info = new SsoClientInfo(CLIENT_ID, 7L, "Demo 消费方", "$argon2id$hash",
+            List.of("https://demo.localhost/auth/callback"), null,
+            Set.of("openid", "email"), Set.of("authorization_code"), true);
+        stubGet(info);
+
+        Optional<SsoClient> result = adapter.findByClientId(CLIENT_ID);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().postLogoutRedirectUris()).isEmpty();
     }
 
     @Test
