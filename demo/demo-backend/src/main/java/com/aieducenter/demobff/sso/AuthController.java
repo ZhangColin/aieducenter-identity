@@ -87,7 +87,7 @@ public class AuthController {
         // 2. 302 到 identity RP-Initiated Logout（issue #38）：浏览器顶层导航到 identity，清 SSO 会话 + sso_session cookie——
         //    否则 identity 侧 sso_session 仍在 → 下次 /authorize 直接发 code（二次免登）。
         //    identity 清完按 post_logout_redirect_uri 白名单 302 回 demo 首页（原样回带 state）。
-        //    注意：post_logout_redirect_uri 需登记进 demo client 的 redirect_uri 白名单（app-registry），否则 identity 清完会话返 200 不跳转。
+        //    注意：post_logout_redirect_uri 需登记进 demo client 的 post_logout_redirect_uris 白名单（app-registry，独立于 redirect_uri，ADR-0005），否则 identity 清完会话返 200 不跳转。
         String base = props.getAppBaseUrl();
         String postLogoutRedirectUri = base.endsWith("/") ? base : base + "/";
         return redirect(oidcClient.logoutUrl(postLogoutRedirectUri, OidcClient.randomToken()));
