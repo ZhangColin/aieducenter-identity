@@ -82,16 +82,21 @@ class LogoutFlowIntegrationTest extends SsoIntegrationTestBase {
     }
 
     @Test
-    void given_logout_when_redirect_not_whitelisted_then_200_no_redirect_but_session_cleared() throws Exception {
+    void given_logout_when_redirect_not_whitelisted_then_redirect_to_error_page_but_session_cleared() throws Exception {
         Long userId = createUser();
         Cookie cookie = login(userId);
 
-        // post_logout_redirect_uri 不在白名单 → 不重定向（防开放重定向），但仍清会话
-        mvc.perform(get("/logout")
+        // post_logout_redirect_uri 不在登出白名单 → 校验失败跳兜底页（ADR-0006），会话仍清
+        MvcResult result = mvc.perform(get("/logout")
                 .param("client_id", CLIENT_ID)
                 .param("post_logout_redirect_uri", "https://evil.example/logout-cb")
                 .cookie(cookie))
-            .andExpect(status().isOk());
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", startsWith(ssoProperties.getErrorPageUrl())))
+            .andReturn();
+        String location = result.getResponse().getHeader("Location");
+        assertThat(queryParam(location, "error")).isEqualTo("invalid_request");
+        assertThat(queryParam(location, "client_id")).isEqualTo(CLIENT_ID);
 
         // 会话仍被清 → /authorize 不再免登
         mvc.perform(get("/authorize")
@@ -103,16 +108,21 @@ class LogoutFlowIntegrationTest extends SsoIntegrationTestBase {
     }
 
     @Test
-    void given_logout_when_post_logout_uri_only_in_redirect_uris_then_200_no_redirect_but_session_cleared() throws Exception {
+    void given_logout_when_post_logout_uri_only_in_redirect_uris_then_redirect_to_error_page_but_session_cleared() throws Exception {
         Long userId = createUser();
         Cookie cookie = login(userId);
 
-        // REDIRECT_URI 在登录回调白名单（redirectUris）但不在登出白名单（postLogoutRedirectUris）→ 不重定向（ADR-0005）
-        mvc.perform(get("/logout")
+        // REDIRECT_URI 在登录回调白名单（redirectUris）但不在登出白名单（postLogoutRedirectUris）→ 校验失败跳兜底页（ADR-0005/0006）
+        MvcResult result = mvc.perform(get("/logout")
                 .param("client_id", CLIENT_ID)
                 .param("post_logout_redirect_uri", REDIRECT_URI)
                 .cookie(cookie))
-            .andExpect(status().isOk());
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", startsWith(ssoProperties.getErrorPageUrl())))
+            .andReturn();
+        String location = result.getResponse().getHeader("Location");
+        assertThat(queryParam(location, "error")).isEqualTo("invalid_request");
+        assertThat(queryParam(location, "client_id")).isEqualTo(CLIENT_ID);
 
         // 会话仍被清 → /authorize 不再免登
         mvc.perform(get("/authorize")
@@ -124,16 +134,21 @@ class LogoutFlowIntegrationTest extends SsoIntegrationTestBase {
     }
 
     @Test
-    void given_logout_when_client_id_unknown_then_200_no_redirect_but_session_cleared() throws Exception {
+    void given_logout_when_client_id_unknown_then_redirect_to_error_page_but_session_cleared() throws Exception {
         Long userId = createUser();
         Cookie cookie = login(userId);
 
-        // client_id 未知 → 无法校验白名单 → 不重定向，但仍清会话
-        mvc.perform(get("/logout")
+        // client_id 未知 → 无法校验白名单 → 校验失败跳兜底页，会话仍清
+        MvcResult result = mvc.perform(get("/logout")
                 .param("client_id", "ghost-client")
                 .param("post_logout_redirect_uri", REDIRECT_URI)
                 .cookie(cookie))
-            .andExpect(status().isOk());
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", startsWith(ssoProperties.getErrorPageUrl())))
+            .andReturn();
+        String location = result.getResponse().getHeader("Location");
+        assertThat(queryParam(location, "error")).isEqualTo("unauthorized_client");
+        assertThat(queryParam(location, "client_id")).isEqualTo("ghost-client");
 
         mvc.perform(get("/authorize")
                 .param("client_id", CLIENT_ID)

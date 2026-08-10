@@ -14,5 +14,7 @@ logging.level.root: INFO
 # app-registry bootstrap（#30）：prod 必须显式提供 base-url（内网服务地址）
 identity:
   sso:
+    # 浏览器类端点出错时 302 跳 identity-web 兜底页（ADR-0006，prod 走 env）
+    error-page-url: ${IDENTITY_SSO_ERROR_PAGE_URL}
     app-registry:
       base-url: ${APP_REGISTRY_BASE_URL}

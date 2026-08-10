@@ -37,6 +37,8 @@ identity:
     # /authorize 无 cookie → 302 到 identity-web 登录页（:10002，rewrite /api/* → :10001）
     # identity-web 没起时手工兜底：http://identity.localhost:10001/api/auth/dev-login
     login-page-url: http://identity.localhost:10002/login
+    # 浏览器类端点出错时 302 跳 identity-web 兜底页（:10002 /error，ADR-0006）
+    error-page-url: http://identity.localhost:10002/error
     # app-registry 本地端口（../aieducenter-app-registry 本地起在 :8088，见其 application.yml server.port）
     app-registry:
       base-url: http://localhost:8088

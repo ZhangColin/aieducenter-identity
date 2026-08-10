@@ -7,7 +7,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Duration;
@@ -17,6 +16,7 @@ import java.util.Set;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSession;
@@ -36,10 +36,10 @@ import jakarta.servlet.http.Cookie;
  * <p>覆盖：
  * <ul>
  *   <li>同一 client 两次 /authorize → bootstrap stub 仅命中一次（fresh 缓存，#30）；</li>
- *   <li>{@code active=false} 的 client 被拒办，且二次 /authorize 不再命中 WireMock（负面缓存，#32 AC#1）；</li>
- *   <li>app-registry 返 404「查不到」→ 走负面缓存、/authorize 拒办 {@code unauthorized_client}(400)（稳定结论，非抖动，#42）；</li>
+ *   <li>{@code active=false} 的 client 被拒办、跳兜底页，且二次 /authorize 不再命中 WireMock（负面缓存，#32 AC#1）；</li>
+ *   <li>app-registry 返 404「查不到」→ 走负面缓存、/authorize 跳兜底页 {@code error=unauthorized_client}（稳定结论，非抖动，#42）；</li>
  *   <li>app-registry 抖动（500）+ 有过期缓存 → 过期兜底、/authorize 仍正常发 code（不拒办、不抛 500，#32 AC#2）；</li>
- *   <li>app-registry 抖动（500）+ 无缓存 → 拒办 {@code temporarily_unavailable}(503)（infra 故障 ≠ client 配置错，#42 / ADR-0006）。</li>
+ *   <li>app-registry 抖动（500）+ 无缓存 → /authorize 跳兜底页 {@code error=temporarily_unavailable}（infra 故障 ≠ client 配置错，#42 / ADR-0006——/authorize 浏览器类端点错误跳兜底页而非返 JSON）。</li>
  * </ul>
  * 命中计数用 WireMock 请求 journal 的 before/after delta（journal 跨测试累积，故取 delta 而非绝对值）。</p>
  */
@@ -83,17 +83,19 @@ class SsoClientCacheIntegrationTest extends SsoIntegrationTestBase {
         stubClient(DISABLED_CLIENT_ID, false, null);
         int servedBefore = bootstrapServedCount(DISABLED_CLIENT_ID);
 
-        // active=false → 拒办（unauthorized_client 400）
-        mvc.perform(get("/authorize")
+        // active=false → 拒办、跳兜底页（unauthorized_client）
+        MvcResult first = mvc.perform(get("/authorize")
                 .param("client_id", DISABLED_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
                 .param("state", "s1"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value("unauthorized_client"));
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", Matchers.startsWith(ssoProperties.getErrorPageUrl())))
+            .andReturn();
+        assertThat(queryParam(first.getResponse().getHeader("Location"), "error")).isEqualTo("unauthorized_client");
         mvc.perform(get("/authorize")
                 .param("client_id", DISABLED_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
                 .param("state", "s2"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value("unauthorized_client"));
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", Matchers.startsWith(ssoProperties.getErrorPageUrl())));
 
         int servedAfter = bootstrapServedCount(DISABLED_CLIENT_ID);
         assertThat(servedAfter - servedBefore)
@@ -140,17 +142,19 @@ class SsoClientCacheIntegrationTest extends SsoIntegrationTestBase {
         stubClientError(UNKNOWN_CLIENT_ID, 404);
         int servedBefore = bootstrapServedCount(UNKNOWN_CLIENT_ID);
 
-        // 404「查不到」是稳定结论（非抖动）→ 走负面缓存 → unauthorized_client(400)
-        mvc.perform(get("/authorize")
+        // 404「查不到」是稳定结论（非抖动）→ 走负面缓存 → 跳兜底页（unauthorized_client）
+        MvcResult first = mvc.perform(get("/authorize")
                 .param("client_id", UNKNOWN_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
                 .param("state", "s1"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value("unauthorized_client"));
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", Matchers.startsWith(ssoProperties.getErrorPageUrl())))
+            .andReturn();
+        assertThat(queryParam(first.getResponse().getHeader("Location"), "error")).isEqualTo("unauthorized_client");
         mvc.perform(get("/authorize")
                 .param("client_id", UNKNOWN_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
                 .param("state", "s2"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value("unauthorized_client"));
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", Matchers.startsWith(ssoProperties.getErrorPageUrl())));
 
         int servedAfter = bootstrapServedCount(UNKNOWN_CLIENT_ID);
         assertThat(servedAfter - servedBefore)
@@ -159,16 +163,18 @@ class SsoClientCacheIntegrationTest extends SsoIntegrationTestBase {
     }
 
     @Test
-    void given_no_cache_and_app_registry_jitter_when_authorize_then_temporarily_unavailable_503() throws Exception {
+    void given_no_cache_and_app_registry_jitter_when_authorize_then_redirect_to_error_page_with_temporarily_unavailable() throws Exception {
         stubClientError(FLAKY_CLIENT_ID, 500);
         int servedBefore = bootstrapServedCount(FLAKY_CLIENT_ID);
 
-        // 无缓存 + 抖动（infra 故障）→ temporarily_unavailable(503)，不再误报 unauthorized_client(400)
-        mvc.perform(get("/authorize")
+        // 无缓存 + 抖动（infra 故障）→ 跳兜底页（error=temporarily_unavailable，不再误报 unauthorized_client）
+        MvcResult result = mvc.perform(get("/authorize")
                 .param("client_id", FLAKY_CLIENT_ID).param("redirect_uri", REDIRECT_URI)
                 .param("state", "s1"))
-            .andExpect(status().isServiceUnavailable())
-            .andExpect(jsonPath("$.error").value("temporarily_unavailable"));
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", Matchers.startsWith(ssoProperties.getErrorPageUrl())))
+            .andReturn();
+        assertThat(queryParam(result.getResponse().getHeader("Location"), "error")).isEqualTo("temporarily_unavailable");
 
         int servedAfter = bootstrapServedCount(FLAKY_CLIENT_ID);
         assertThat(servedAfter - servedBefore)

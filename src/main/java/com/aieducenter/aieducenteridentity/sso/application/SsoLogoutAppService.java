@@ -5,14 +5,14 @@ import org.springframework.stereotype.Service;
 import com.aieducenter.aieducenteridentity.sso.application.dto.LogoutResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
-import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
 
 /**
  * RP-initiated logout 应用服务（CONTEXT 登出「准 SLO」/ issue #19）。
  *
  * <p>清当前 SSO 会话（凭 cookie 的 sessionId）+ 解析 {@code post_logout_redirect_uri}（精确匹配白名单，
- * 校验失败不重定向——防开放重定向）。始终清会话（即使 redirect 参数无效或无 cookie），仅跳转受白名单约束。</p>
+ * 校验失败抛 {@link com.aieducenter.aieducenteridentity.sso.domain.error.OidcException} 冒泡——由 Controller
+ * 局部 handler 跳兜底页，ADR-0006）。始终清会话（即使 redirect 参数无效或无 cookie），仅跳转受白名单约束。</p>
  *
  * <p>准 SLO：不主动通知其它应用；refresh 绑 SSO 会话（{@code SsoTokenAppService} 校验）+ access 15min 短命自然收尾，
  * 实现「登出后 ≤15min 全失效」。改密/封号踢人复用 {@link SsoSessionRepository#deleteByUserId}。</p>
@@ -48,22 +48,20 @@ public class SsoLogoutAppService {
     }
 
     /**
-     * 解析 post_logout_redirect_uri：缺失/未登记/无 client_id → 不重定向（防开放重定向，CONTEXT 安全集）。
+     * 解析 post_logout_redirect_uri：缺失 → 不重定向（返 null，Controller 返 200）；未登记 / 未知 client →
+     * 抛 {@link com.aieducenter.aieducenteridentity.sso.domain.error.OidcException} 冒泡（由 Controller 局部
+     * handler 接住跳兜底页，ADR-0006）。
      *
      * <p>走独立的 {@code postLogoutRedirectUris} 白名单（ADR-0005，不再复用 {@code redirectUris}）；
-     * 校验抛 {@link OidcException} 时吞掉、返回 null——登出已完成，仅跳转被拒。</p>
+     * 登出已完成（{@code sessionRepository.delete} 已先于校验执行），仅跳转被拒改走兜底页。</p>
      */
     private String resolvePostLogoutRedirect(String clientId, String postLogoutRedirectUri, String state) {
         if (postLogoutRedirectUri == null || postLogoutRedirectUri.isBlank()) {
             return null;
         }
-        try {
-            SsoClient client = clientValidation.requireActiveClient(clientId);
-            clientValidation.requirePostLogoutRedirectUri(client, postLogoutRedirectUri);
-        } catch (OidcException ex) {
-            // 校验失败：登出仍完成，但不重定向（防开放重定向）
-            return null;
-        }
+        // 校验失败（未知 client / post_logout 未登记）→ 抛 OidcException 冒泡，Controller 局部 handler 跳兜底页
+        SsoClient client = clientValidation.requireActiveClient(clientId);
+        clientValidation.requirePostLogoutRedirectUri(client, postLogoutRedirectUri);
         return AuthorizationCodeAppService.appendQuery(postLogoutRedirectUri, "state", state);
     }
 }

@@ -43,6 +43,15 @@ public class SsoProperties {
     /** 未登录时 /authorize 302 跳转的登录页 URL（identity-web），透传 authorize 参数。 */
     private String loginPageUrl = "https://identity.localhost/login";
 
+    /**
+     * 浏览器导航类端点（{@code /authorize}、{@code /logout}）出错时 302 跳转的兜底页 URL（identity-web），
+     * 带 {@code ?error&error_description&client_id}（ADR-0006）。
+     *
+     * <p><b>取自配置、不取自请求参数</b>——防开放重定向（错误页目标不可由调用方控制）。local 指向 identity-web
+     * {@code /error}，prod 走 env。</p>
+     */
+    private String errorPageUrl = "https://identity.localhost/error";
+
     /** 受 SSO 会话保护的路径（无有效 SSO cookie → 401）。 */
     private List<String> protectedPaths = new ArrayList<>(List.of("/api/account/me", "/api/account/profile"));
 
@@ -97,6 +106,14 @@ public class SsoProperties {
 
     public void setLoginPageUrl(String loginPageUrl) {
         this.loginPageUrl = loginPageUrl;
+    }
+
+    public String getErrorPageUrl() {
+        return errorPageUrl;
+    }
+
+    public void setErrorPageUrl(String errorPageUrl) {
+        this.errorPageUrl = errorPageUrl;
     }
 
     public List<String> getProtectedPaths() {

@@ -6,12 +6,15 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aieducenter.aieducenteridentity.sso.application.SsoAuthorizeAppService;
 import com.aieducenter.aieducenteridentity.sso.application.dto.AuthorizeRequest;
+import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.endpoints.web.OidcErrorPageRedirector;
 import com.aieducenter.aieducenteridentity.sso.endpoints.web.SsoCookieService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,10 +32,13 @@ public class AuthorizeController {
 
     private final SsoAuthorizeAppService authorizeService;
     private final SsoCookieService cookieService;
+    private final OidcErrorPageRedirector errorPageRedirector;
 
-    public AuthorizeController(SsoAuthorizeAppService authorizeService, SsoCookieService cookieService) {
+    public AuthorizeController(SsoAuthorizeAppService authorizeService, SsoCookieService cookieService,
+            OidcErrorPageRedirector errorPageRedirector) {
         this.authorizeService = authorizeService;
         this.cookieService = cookieService;
+        this.errorPageRedirector = errorPageRedirector;
     }
 
     @GetMapping("/authorize")
@@ -49,5 +55,15 @@ public class AuthorizeController {
         String location = authorizeService.handleAuthorize(
             new AuthorizeRequest(clientId, redirectUri, state, nonce, scope), sessionId);
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(location)).build();
+    }
+
+    /**
+     * 浏览器类端点错误分流（ADR-0006）：{@code /authorize} 抛 {@link OidcException} 时不返裸 JSON，
+     * 302 跳 identity-web 兜底页（透传 error/error_description/client_id）。局部 handler 优先于全局
+     * {@link com.aieducenter.aieducenteridentity.sso.endpoints.web.OidcExceptionHandler}（后者继续管机机类端点）。
+     */
+    @ExceptionHandler(OidcException.class)
+    public ResponseEntity<Void> onOidcError(OidcException ex, HttpServletRequest request) {
+        return errorPageRedirector.redirect(ex, request.getParameter("client_id"));
     }
 }

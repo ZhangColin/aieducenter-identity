@@ -51,6 +51,8 @@ identity:
     cookie-name: sso_session
     cookie-secure: true
     login-page-url: https://login.company.com/login
+    # 浏览器导航类端点（/authorize /logout）出错时 302 跳转的兜底页（ADR-0006，identity-web /error）
+    error-page-url: https://identity.aieducenter.com/error
     protected-paths:
       - /api/account/me
       - /api/account/profile
