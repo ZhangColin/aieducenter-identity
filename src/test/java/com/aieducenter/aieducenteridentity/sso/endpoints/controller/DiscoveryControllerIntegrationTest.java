@@ -15,7 +15,8 @@ import com.aieducenter.aieducenteridentity.sso.endpoints.SsoIntegrationTestBase;
  * {@code GET /.well-known/openid-configuration} HTTP 黑盒集成测试（issue #17 AC）。
  *
  * <p>覆盖：issuer（== token 的 iss）+ authorize/token/userinfo/jwks 端点 + scopes_supported +
- * id_token_signing_alg_values_supported(RS256) + response/grant types。</p>
+ * id_token_signing_alg_values_supported(RS256) + response/grant types +
+ * logout 能力字段（end_session_endpoint / front/back-channel SLO / post_logout_redirect，issue #41）。</p>
  */
 class DiscoveryControllerIntegrationTest extends SsoIntegrationTestBase {
 
@@ -47,5 +48,20 @@ class DiscoveryControllerIntegrationTest extends SsoIntegrationTestBase {
         org.assertj.core.api.Assertions.assertThat(
             com.jayway.jsonpath.JsonPath.read(body, "$.scopes_supported").toString())
             .contains("openid", "profile", "email", "phone");
+    }
+
+    @Test
+    void get_discovery_then_publishes_logout_endpoint_and_capability_flags() throws Exception {
+        String issuer = jwtTokenProperties.getIssuer();
+
+        // 接入应用凭 discovery 自动发现登出端点、明确 SLO 能力（issue #41）：
+        // identity 支持 RP-Initiated Logout（end_session_endpoint 指向 /logout）+ post_logout_redirect，
+        // 不支持 front/back-channel SLO。
+        mvc.perform(get("/.well-known/openid-configuration"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.end_session_endpoint").value(issuer + "/logout"))
+            .andExpect(jsonPath("$.frontchannel_logout_supported").value(false))
+            .andExpect(jsonPath("$.backchannel_logout_supported").value(false))
+            .andExpect(jsonPath("$.post_logout_redirect_uris_supported").value(true));
     }
 }

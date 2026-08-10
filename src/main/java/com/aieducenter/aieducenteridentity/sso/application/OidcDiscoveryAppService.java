@@ -42,7 +42,9 @@ public class OidcDiscoveryAppService {
     /**
      * /.well-known/openid-configuration——issuer + 端点 + 支持的 scope/grant/算法清单。
      *
-     * <p>端点 = {@code issuer + 路径}；{@code issuer} 与 token 的 {@code iss} 同源（均来自 {@link SigningKeyCatalog#issuer()}）。</p>
+     * <p>端点 = {@code issuer + 路径}；{@code issuer} 与 token 的 {@code iss} 同源（均来自 {@link SigningKeyCatalog#issuer()}）。
+     * logout 能力（issue #41）：{@code end_session_endpoint} 指向 {@code /logout}；identity 不支持
+     * front/back-channel SLO、支持 post_logout_redirect。</p>
      */
     public DiscoveryResponse discovery() {
         String issuer = signingKeyCatalog.issuer();
@@ -52,12 +54,16 @@ public class OidcDiscoveryAppService {
             issuer + "/token",
             issuer + "/userinfo",
             issuer + "/jwks",
+            issuer + "/logout",
             SCOPES_SUPPORTED,
             RESPONSE_TYPES_SUPPORTED,
             GRANT_TYPES_SUPPORTED,
             SUBJECT_TYPES_SUPPORTED,
             ID_TOKEN_ALGS_SUPPORTED,
-            TOKEN_ENDPOINT_AUTH_METHODS);
+            TOKEN_ENDPOINT_AUTH_METHODS,
+            false,
+            false,
+            true);
     }
 }
 
