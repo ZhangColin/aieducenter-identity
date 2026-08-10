@@ -4,10 +4,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenClaims;
+import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenSigner;
 import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
@@ -28,6 +33,10 @@ public abstract class SsoIntegrationTestBase extends IdentityIntegrationTestBase
     @Autowired
     protected RSAKey identityRsaKey;
 
+    /** id_token 签发器（测试构造真实 id_token_hint 用，issue #45）。 */
+    @Autowired
+    protected IdTokenSigner idTokenSigner;
+
     /** 用签名公钥本地验签 JWT，返回声明集；签名不匹配抛断言错误。 */
     protected JWTClaimsSet verifyJwtWithPublicKey(String compactJwt) throws Exception {
         SignedJWT jwt = SignedJWT.parse(compactJwt);
@@ -35,6 +44,19 @@ public abstract class SsoIntegrationTestBase extends IdentityIntegrationTestBase
             throw new AssertionError("JWT 签名验证失败（公钥不匹配/被篡改）");
         }
         return jwt.getJWTClaimsSet();
+    }
+
+    /**
+     * 签发一个真实 id_token 作 {@code id_token_hint}（{@code sub=userId}），供 RP-initiated logout 测试（issue #45）。
+     *
+     * <p>/logout 的 hint decoder 不验签，但用真实 RS256 签名贴近 demo-backend 联调形态（值 = BFF session 持有的 id_token）。
+     * iss/aud 用固定字面量——decoder 不校验，仅 sub（=userId）参与兜底会话定位。</p>
+     */
+    protected String idTokenHint(Long userId) {
+        Instant now = Instant.now();
+        return idTokenSigner.sign(new IdTokenClaims(
+            "https://identity.aieducenter.com", String.valueOf(userId), List.of("aieducenter-identity"),
+            now, now.plusSeconds(900), "hint-jti", null, null, null, null, null, null, null));
     }
 
     /** 从 Set-Cookie 头抽指定 cookie 的值。 */

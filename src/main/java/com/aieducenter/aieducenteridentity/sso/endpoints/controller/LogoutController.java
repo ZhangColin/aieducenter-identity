@@ -44,17 +44,18 @@ public class LogoutController {
     }
 
     @GetMapping("/logout")
-    @Operation(summary = "OIDC RP-initiated 登出", description = "清 SSO 会话+cookie，302 回 post_logout_redirect_uri（白名单）；缺失则 200，未登记/未知 client 跳兜底页")
+    @Operation(summary = "OIDC RP-initiated 登出", description = "清 SSO 会话+cookie，302 回 post_logout_redirect_uri（白名单）；缺失则 200，未登记/未知 client 跳兜底页。id_token_hint 可选——解码出 sub 用于审计 + cookie 缺失时兜底定位")
     public ResponseEntity<Void> logout(
             @RequestParam(value = "client_id", required = false) String clientId,
             @RequestParam(value = "post_logout_redirect_uri", required = false) String postLogoutRedirectUri,
             @RequestParam(value = "state", required = false) String state,
+            @RequestParam(value = "id_token_hint", required = false) String idTokenHint,
             HttpServletRequest request,
             HttpServletResponse response) {
         String sessionId = cookieService.readSessionId(request).orElse(null);
         // 先清 cookie：登出优先，无论如何（含校验失败抛 OidcException）都清；会话在 service 内先于校验删除。
         cookieService.clearSessionCookie(response);
-        LogoutResult result = logoutService.logout(sessionId, clientId, postLogoutRedirectUri, state);
+        LogoutResult result = logoutService.logout(sessionId, clientId, postLogoutRedirectUri, state, idTokenHint);
         if (result.redirectUrl() != null) {
             return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(result.redirectUrl())).build();
         }

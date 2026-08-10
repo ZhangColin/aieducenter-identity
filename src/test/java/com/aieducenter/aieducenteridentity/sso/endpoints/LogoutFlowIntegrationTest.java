@@ -167,4 +167,73 @@ class LogoutFlowIntegrationTest extends SsoIntegrationTestBase {
             .andExpect(status().isFound())
             .andExpect(header().string("Location", POST_LOGOUT_REDIRECT_URI));
     }
+
+    @Test
+    void given_id_token_hint_when_no_sso_cookie_then_fallback_clears_session_by_sub_and_redirects() throws Exception {
+        Long userId = createUser();
+        Cookie cookie = login(userId);
+
+        // 无 SSO cookie，但带 id_token_hint（sub=userId）→ 兜底按 userId 清该用户所有会话，仍 302 回 post_logout（issue #45 AC：cookie 缺失用 hint 定位）
+        mvc.perform(get("/logout")
+                .param("client_id", CLIENT_ID)
+                .param("post_logout_redirect_uri", POST_LOGOUT_REDIRECT_URI)
+                .param("id_token_hint", idTokenHint(userId)))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", POST_LOGOUT_REDIRECT_URI));
+
+        // 会话被兜底清掉 → 持原 cookie 调 /authorize 不再免登（302 登录页，而非发 code 回 redirect_uri）
+        mvc.perform(get("/authorize")
+                .param("client_id", CLIENT_ID)
+                .param("redirect_uri", REDIRECT_URI)
+                .cookie(cookie))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", startsWith(ssoProperties.getLoginPageUrl())));
+    }
+
+    @Test
+    void given_id_token_hint_and_sso_cookie_when_logout_then_cookie_takes_precedence_and_redirects() throws Exception {
+        Long userId = createUser();
+        Cookie cookie = login(userId);
+
+        // hint 与 cookie 共存：cookie 路径精确清当前会话、302 回 post_logout+state；hint 不破坏主流程（issue #45 AC：不带/带 hint 主流程一致）
+        mvc.perform(get("/logout")
+                .param("client_id", CLIENT_ID)
+                .param("post_logout_redirect_uri", POST_LOGOUT_REDIRECT_URI)
+                .param("state", "xyz")
+                .param("id_token_hint", idTokenHint(userId))
+                .cookie(cookie))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", POST_LOGOUT_REDIRECT_URI + "?state=xyz"));
+
+        // 会话已清 → /authorize 不再免登
+        mvc.perform(get("/authorize")
+                .param("client_id", CLIENT_ID)
+                .param("redirect_uri", REDIRECT_URI)
+                .cookie(cookie))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", startsWith(ssoProperties.getLoginPageUrl())));
+    }
+
+    @Test
+    void given_garbage_id_token_hint_when_logout_then_ignored_and_logout_completes() throws Exception {
+        Long userId = createUser();
+        Cookie cookie = login(userId);
+
+        // 无效 id_token_hint（非 JWT）→ decoder 静默返空、当「无 hint」处理，cookie 仍清会话、登出正常完成（OIDC：无效 hint 不阻断）
+        mvc.perform(get("/logout")
+                .param("client_id", CLIENT_ID)
+                .param("post_logout_redirect_uri", POST_LOGOUT_REDIRECT_URI)
+                .param("id_token_hint", "not.a.valid.jwt")
+                .cookie(cookie))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", POST_LOGOUT_REDIRECT_URI));
+
+        // 会话仍被 cookie 路径清掉 → /authorize 不再免登
+        mvc.perform(get("/authorize")
+                .param("client_id", CLIENT_ID)
+                .param("redirect_uri", REDIRECT_URI)
+                .cookie(cookie))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", startsWith(ssoProperties.getLoginPageUrl())));
+    }
 }
