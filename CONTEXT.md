@@ -9,6 +9,7 @@
 - **放弃 sa-token / cartisan-security 鉴权** — 见 [ADR-0004](docs/adr/0004-drop-satoken-single-sso-session.md)。cartisan-security 的甜区是「企业后台前端持 token 调自己后端」；identity 是 **IdP 不是消费应用**——三类接口（公开 / SSO 会话 / 机机签名 / OIDC 协议）没一类需要 sa-token 的 token-match 鉴权。原 [ADR-0003](docs/adr/0003-sso-satoken-self-built-oidc.md)「会话引擎继续 Sa-Token」被修订。
 - **一套 SSO 会话**：identity 唯一用户会话 = IdP SSO 会话（cookie + Redis + 双超时）。不再有「access JWT 兼 Sa-Token 会话 token」那套。
 - **token 是 OIDC 产物，归 `/token` 端点**：access/id/refresh 签给消费方 BFF，浏览器永不接触（BFF 模式）。login/register 不签 token 返回，只建会话发 code。
+- **限界上下文只经 AppService 交往**（[ADR-0007](docs/adr/0007-cross-context-via-appservice.md)）：上下文之间只走应用层；sso→account 直接注入 account AppService，account→sso 逆流走 port 断环。token 三件套归属 sso、account 应用层=平台用户一体化缝（[ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md)，落实 ADR-0004 决策3）。
 
 ## 继承的稳定不变式（平台已定，本项目遵守）
 
@@ -63,6 +64,9 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 ### Account（账号 / 终端用户）
 平台一个终端用户。一张 `account` 表：`userId`（主键 TSID，作 SSO `sub`，换邮箱/手机不变）；登录定位字段 `email`/`phone`（唯一、可空）+ `password_hash`（可空）；状态字段。
 > email/phone 是「登录入口 + 联络通道」，**不是身份本体**；身份本体是 userId。
+
+### Subject（OIDC subject 读模型）
+account 应用层对外兜出的「已认证身份数据」契约（`SubjectView`：userId / email / phone / nickname / avatar / status）。sso 经 `AccountAuthAppService`（authenticate / register）或 `AccountSubjectAppService`（subjectClaims）取得，用来造 OIDC 声明（token / userinfo）。sso 不直接碰 Account/Profile 聚合（ADR-0007/0008）。`status` 由调用方自决 gate（发 token 判 usable、userinfo 忽略）。
 
 ### Profile（个人信息）
 昵称/头像等，扩展表（跟 account 1:1），不塞进用户主表。
@@ -132,7 +136,7 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 
 - **本地**：`.localhost` 多域——浏览器自动解析到 127.0.0.1 + 当 secure context（免改 hosts、免证书）。端口：identity `identity.localhost:10001`、identity-web 登录页 `identity.localhost:10002`（Next dev，rewrite `/api/*`→:10001）、demo BFF `demo.localhost:10010`、demo-web `demo.localhost:3000`（Next 代理 `/api`·`/auth`→BFF）。一键起：`./dev-up.sh`（PG+Redis+四进程命令）；手册 `docs/guide/local-sso-debugging.md`。
 - **demo 消费方**（仓内 `demo/`：`demo-backend` BFF + `demo-web`）：发起 /authorize + 收 callback + BFF 换 token（内存存、浏览器不接触）+ 显示用户。一身三任：**测试必需品 + 对接活示例 + 演示开发姿态**。
-- **dev 一键登**（identity-web 缺席时的手工兜底，#16/#27）：`identity.sso.dev-login.enabled=true`（local profile）保持开启、预置账号照常种入；但 local 的 `login-page-url` 已指向 identity-web 登录页（`identity.localhost:10002/login`），`/authorize` 无 cookie 默认 302 到真实登录页。identity-web 没起时手工访问 `/api/auth/dev-login`（带 authorize 参数）自动登预置账号 `demo@aieducenter.com`、发 code。仍走正常 code→/token 流程（不直接发 token）。
+- ~~**dev 一键登**~~（#16/#27，**已移除**）：原为 identity-web 登录页缺席时的免密兜底；登录页已在、密码登录 local 无摩擦（无验证码 / 图形码），立项理由消失，随限界上下文重构（ADR-0008）整删（`DevLoginAppService` / `DevLoginController` / `DevAccountSeeder` + `identity.sso.dev-login.*` 配置）。local-dev 建号改走真注册 / SQL / 文档化 curl。
 - **dev SSO 环境**（identity.dev.aieducenter.com）：真实 OIDC；redirect_uri 放行 `localhost:*`；预置测试账号 + 一键快速登录；发码通道 = Log（码进日志）；dev 固定码可配（guard 只拦字面 `prod` profile，启用前需部署侧先解决 profile 归属，见 #29 Rollout Notes）。**不做「指定 userId 直接发 token」捷径**。
 - **消费方认证解耦**：业务代码只认「当前登录用户」抽象；姿态 A 连 dev SSO（主线）/ 姿态 B 本地 mock（兜底，消费方自写，不给 mock 端点）。
 
@@ -194,6 +198,8 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - [ADR-0004](docs/adr/0004-drop-satoken-single-sso-session.md) **弃 sa-token / 一套 SSO 会话 / token 归 /token**
 - [ADR-0005](docs/adr/0005-post-logout-redirect-uri-dedicated-allowlist.md) post_logout_redirect_uri 独立白名单（不复用 redirect_uri）
 - [ADR-0006](docs/adr/0006-error-response-split-by-caller.md) 端点错误响应按调用方分流（浏览器类跳 identity-web 兜底页 / 机机类 RFC6749 JSON）
+- [ADR-0007](docs/adr/0007-cross-context-via-appservice.md) 跨上下文调用只走被调方 AppService（服务级 DDD 原则）
+- [ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md) token 三件套归属 sso + account 应用层=平台用户一体化缝
 
 ## 构建分期（重排；旧 issue #5 等及 token-in-login 设计废弃）
 

@@ -2,6 +2,7 @@
 
 - 状态：已定
 - 日期：2026-07-27
+- 注：本 ADR 定 token **格式**（JWT），与归属无关；token 代码归属 sso 上下文见 [ADR-0008](0008-token-ownership-sso-account-user-api.md)
 
 ## 背景
 OIDC 规范涉及三种 token：`id_token`（规范要求 JWT）、`access_token`（格式可选）、`refresh_token`（总是不透明串、服务端存）。`access_token` 有两种格式：

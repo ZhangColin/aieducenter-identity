@@ -3,6 +3,7 @@
 - 状态：已定
 - 日期：2026-07-31
 - 修订：[ADR-0003](0003-sso-satoken-self-built-oidc.md)「会话引擎继续 Sa-Token」一条
+- 落实：决策3「token 归 `/token`」的代码归属迁移由 [ADR-0008](0008-token-ownership-sso-account-user-api.md) 完成（token 三件套整体迁 sso）
 
 ## 背景
 
@@ -27,7 +28,7 @@
 
 1. **弃 sa-token / cartisan-security 鉴权**：identity 不用 `@RequireAuth` / `StpInterface` / `SecurityFilter` 的 token-match 链路。
 2. **一套 SSO 会话**：identity 唯一用户会话 = IdP SSO 会话（cookie + Redis + 双超时 30/90 天）。受保护接口凭 SSO cookie 会话认人（自写一个会话拦截器替代 `@RequireAuth`，从 cookie 读 sessionId → 查 Redis → 填 RequestContext）。
-3. **token 是 OIDC 产物，归 `/token` 端点**：access/id/refresh 在 `/token`（code 换 token）签发给消费方 BFF；`login`/`register` 只建 SSO 会话 + 发 code，**不签 token 返回**。
+3. **token 是 OIDC 产物，归 `/token` 端点**：access/id/refresh 在 `/token`（code 换 token）签发给消费方 BFF；`login`/`register` 只建 SSO 会话 + 发 code，**不签 token 返回**。（代码归属随端点落 sso，见 [ADR-0008](0008-token-ownership-sso-account-user-api.md)）
 4. **#11/#13 的 JWT 签名、refresh 轮换逻辑保留**，从 login/refresh 接口摘出，归 `/token` 端点复用。
 
 ## 理由
