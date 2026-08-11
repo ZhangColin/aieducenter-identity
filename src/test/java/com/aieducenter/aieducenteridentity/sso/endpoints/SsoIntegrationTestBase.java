@@ -11,8 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenClaims;
-import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenSigner;
+import com.aieducenter.aieducenteridentity.sso.domain.token.IdTokenClaims;
+import com.aieducenter.aieducenteridentity.sso.domain.token.IdTokenSigner;
 import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jose.crypto.RSASSAVerifier;

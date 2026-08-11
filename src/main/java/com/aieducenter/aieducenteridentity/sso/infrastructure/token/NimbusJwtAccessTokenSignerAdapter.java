@@ -1,9 +1,9 @@
-package com.aieducenter.aieducenteridentity.account.infrastructure.token;
+package com.aieducenter.aieducenteridentity.sso.infrastructure.token;
 
 import org.springframework.stereotype.Component;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenClaims;
-import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenSigner;
+import com.aieducenter.aieducenteridentity.sso.domain.token.AccessTokenClaims;
+import com.aieducenter.aieducenteridentity.sso.domain.token.AccessTokenSigner;
 import com.cartisan.core.stereotype.Adapter;
 import com.cartisan.core.stereotype.PortType;
 import com.nimbusds.jwt.JWTClaimsSet;

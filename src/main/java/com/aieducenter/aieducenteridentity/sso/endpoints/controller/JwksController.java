@@ -3,7 +3,7 @@ package com.aieducenter.aieducenteridentity.sso.endpoints.controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.JwkSetView;
+import com.aieducenter.aieducenteridentity.sso.domain.token.JwkSetView;
 import com.aieducenter.aieducenteridentity.sso.application.OidcDiscoveryAppService;
 
 import io.swagger.v3.oas.annotations.Operation;

@@ -7,6 +7,7 @@
  *   <li>OIDC Authorization Endpoint {@code /authorize}（状态机：有会话发 code / 无会话跳登录页）</li>
  *   <li>认证入口 {@code /api/auth/*}（密码登录：建会话 + 种 cookie + 发 code）</li>
  *   <li>OIDC Token Endpoint {@code /token}（code 换 access/id/refresh；refresh 轮换）</li>
+ *   <li>OIDC /userinfo /jwks /discovery（#17）、登出/准 SLO（#19）——OIDC 闭环全在 sso</li>
  *   <li>授权码存储（一次性 60s，绑 client/redirect_uri）</li>
  *   <li>SsoClient 查询（#30 消费 app-registry bootstrap + Caffeine 30min 缓存）</li>
  *   <li>SSO 会话过滤器（受保护接口凭 SSO cookie 认人，全库唯一认人入口）</li>
@@ -14,9 +15,9 @@
  *
  * <h3>边界</h3>
  * <ul>
- *   <li>token 三件套签发复用 {@code account} 上下文的 {@code TokenIssuerAppService}（无 sa-token）</li>
- *   <li>密码认证复用 {@code account} 的 AccountRepository / AccountPasswordEncoderService</li>
- *   <li>/userinfo /jwks /discovery(#17)、注册(#18)、登出/准 SLO(#19)、微信(#20) 另行；不在本上下文</li>
+ *   <li>token 三件套<b>自有签发</b>（{@code TokenIssuerAppService}，ADR-0008）；subject 数据经 {@code account}
+ *       的 {@code AccountSubjectAppService} 取（不注入 account 仓储 / 不拿 account 聚合，ADR-0007）</li>
+ *   <li>认人 / 建号经 {@code account} 的 {@code AccountAuthAppService}（ADR-0007 跨上下文只走应用层）</li>
  * </ul>
  *
  * @since 0.1.0

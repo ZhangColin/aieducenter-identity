@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.domain.token;
+package com.aieducenter.aieducenteridentity.sso.domain.token;
 
 /**
  * 单个签名公钥的 JWK 视图（{@code /jwks} 返回，issue #17）。

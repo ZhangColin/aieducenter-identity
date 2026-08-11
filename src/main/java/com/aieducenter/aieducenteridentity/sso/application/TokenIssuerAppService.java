@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.application;
+package com.aieducenter.aieducenteridentity.sso.application;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -9,22 +9,25 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
-import com.aieducenter.aieducenteridentity.account.application.dto.response.LoginResponse;
-import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
-import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
-import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenClaims;
-import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenSigner;
-import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenClaims;
-import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenSigner;
-import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenPayload;
-import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenStore;
-import com.aieducenter.aieducenteridentity.account.infrastructure.token.JwtTokenProperties;
+import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectView;
+import com.aieducenter.aieducenteridentity.sso.application.dto.response.IssuedTokens;
+import com.aieducenter.aieducenteridentity.sso.domain.token.AccessTokenClaims;
+import com.aieducenter.aieducenteridentity.sso.domain.token.AccessTokenSigner;
+import com.aieducenter.aieducenteridentity.sso.domain.token.IdTokenClaims;
+import com.aieducenter.aieducenteridentity.sso.domain.token.IdTokenSigner;
+import com.aieducenter.aieducenteridentity.sso.domain.token.RefreshTokenPayload;
+import com.aieducenter.aieducenteridentity.sso.domain.token.RefreshTokenStore;
+import com.aieducenter.aieducenteridentity.sso.infrastructure.token.JwtTokenProperties;
 
 /**
- * token 签发核心（ADR-0004：纯签发逻辑，无会话概念）。
+ * token 签发核心（ADR-0004：纯签发逻辑，无会话概念；ADR-0008：归属 sso）。
  *
  * <p>签 access/id JWT（RS256）+ 生成不透明 refresh_token 存 Redis——「签发三件套」的唯一真相源，
  * OIDC {@code /token} 端点（授权码 / refresh grant）专用。调用方负责消费旧 refresh（轮换）与绑 SSO 会话。</p>
+ *
+ * <p>纯 sso 组件——subject 数据经 {@link SubjectView}（account 应用层兜出的统一读模型，ADR-0007/0008）
+ * 传入，<b>零 account domain 依赖</b>（不注入 account 仓储 / 不拿 account 聚合）。调用方（{@code SsoTokenAppService}）
+ * 经 {@code AccountSubjectAppService.subjectClaims} 取 {@link SubjectView}，可用性自决 gate 后调本类签发。</p>
  *
  * @since 0.1.0
  */
@@ -48,35 +51,37 @@ public class TokenIssuerAppService {
     }
 
     /**
-     * 为已认证账号签发三件套；OIDC {@code /token}（授权码流）传 nonce（写 id_token）+ scope（写 access_token）+
+     * 为已认证 subject 签发三件套；OIDC {@code /token}（授权码流）传 nonce（写 id_token）+ scope（写 access_token）+
      * sessionId（绑 SSO 会话，准 SLO）。
      *
      * <p>scope 进 access_token，供 {@code /userinfo} 按授权范围过滤返回的 profile/email/phone 资料（issue #17）。
      * 非授权码流（refresh grant）传 null——access_token 不带 scope，{@code /userinfo} 仅返回 {@code sub}。
      * sessionId 绑进 refresh_token：登出/改密/封号清会话后，refresh grant 校验会话存活，否则失效（issue #19 准 SLO）。</p>
      *
-     * @param account   已通过身份验证的账号
-     * @param profile   账号个人资料（可空——取 nickname/avatar 进 id_token）
+     * <p>{@code email_verified}/{@code phone_number_verified} 沿用既有启发式 {@code (value != null)}——联络方式注册时
+     * 已当场验证，登录/续 token 即视为已验证（CONTEXT 不变式；正本清源另开）。</p>
+     *
+     * @param subject   已认证 subject 读模型（含 userId/email/phone/nickname/avatar；status 不参与签发，调用方已 gate）
      * @param nonce     OIDC nonce（/authorize 透传；非授权码流传 null）
      * @param scope     授权范围（空格分隔串；授权码流来自 code 绑定，非授权码流传 null）
      * @param sessionId 签发 refresh 时绑定的 SSO sessionId（准 SLO）
-     * @return 登录响应（access + refresh + id 三 token）
+     * @return 签发结果（access + refresh + id 三 token）
      */
-    public LoginResponse issue(Account account, Profile profile, String nonce, String scope, String sessionId) {
+    public IssuedTokens issue(SubjectView subject, String nonce, String scope, String sessionId) {
         long accessTtl = properties.getAccessTtlSeconds();
         Instant iat = Instant.now();
         Instant exp = iat.plusSeconds(accessTtl);
-        String userId = String.valueOf(account.getId());
+        String userId = String.valueOf(subject.userId());
 
         String accessJwt = accessTokenSigner.sign(new AccessTokenClaims(
             properties.getIssuer(), userId, properties.getAudiences(), iat, exp, newJti(), scope));
-        String idJwt = idTokenSigner.sign(buildIdClaims(account, profile, userId, iat, exp, nonce));
+        String idJwt = idTokenSigner.sign(buildIdClaims(subject, userId, iat, exp, nonce));
 
         // 不透明 refresh_token 服务端存（轮换用）；绑 SSO sessionId（准 SLO：会话失效即失效，issue #19）。
         String refreshToken = newRefreshToken();
-        refreshStore.save(refreshToken, account.getId(), sessionId, Duration.ofSeconds(properties.getRefreshTtlSeconds()));
+        refreshStore.save(refreshToken, subject.userId(), sessionId, Duration.ofSeconds(properties.getRefreshTtlSeconds()));
 
-        return LoginResponse.of(accessJwt, refreshToken, idJwt, accessTtl);
+        return IssuedTokens.of(accessJwt, refreshToken, idJwt, accessTtl);
     }
 
     /**
@@ -92,18 +97,15 @@ public class TokenIssuerAppService {
         return refreshStore.consume(refreshToken);
     }
 
-    private IdTokenClaims buildIdClaims(Account account, Profile profile, String userId,
-            Instant iat, Instant exp, String nonce) {
-        String email = account.getEmail();
-        String phone = account.getPhone();
-        String nickname = profile != null ? profile.getNickname() : null;
-        String picture = profile != null ? profile.getAvatar() : null;
+    private IdTokenClaims buildIdClaims(SubjectView subject, String userId, Instant iat, Instant exp, String nonce) {
+        String email = subject.email();
+        String phone = subject.phone();
         // 联络方式注册时已当场验证；登录/续 token 即视为已验证。
         return new IdTokenClaims(
             properties.getIssuer(), userId, properties.getAudiences(), iat, exp, newJti(),
             email, email != null,
             phone, phone != null,
-            nickname, picture, nonce);
+            subject.nickname(), subject.avatar(), nonce);
     }
 
     private static String newJti() {

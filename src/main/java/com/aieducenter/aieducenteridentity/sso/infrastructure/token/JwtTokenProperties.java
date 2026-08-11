@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.infrastructure.token;
+package com.aieducenter.aieducenteridentity.sso.infrastructure.token;
 
 import java.util.ArrayList;
 import java.util.List;

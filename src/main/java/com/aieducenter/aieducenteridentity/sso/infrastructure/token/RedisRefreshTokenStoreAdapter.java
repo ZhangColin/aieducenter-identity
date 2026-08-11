@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.infrastructure.token;
+package com.aieducenter.aieducenteridentity.sso.infrastructure.token;
 
 import java.time.Duration;
 import java.util.List;
@@ -8,8 +8,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenPayload;
-import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenStore;
+import com.aieducenter.aieducenteridentity.sso.domain.token.RefreshTokenPayload;
+import com.aieducenter.aieducenteridentity.sso.domain.token.RefreshTokenStore;
 import com.cartisan.core.stereotype.Adapter;
 import com.cartisan.core.stereotype.PortType;
 import com.fasterxml.jackson.databind.ObjectMapper;

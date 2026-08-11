@@ -3,13 +3,15 @@
  *
  * <h3>职责</h3>
  * <ul>
+ *   <li>认证 / 建号 / subject 数据读（{@code AccountAuthAppService} / {@code AccountSubjectAppService}——
+ *       平台用户一体化缝，sso 及未来非-SSO 应用经此消费 account，ADR-0007/0008）</li>
  *   <li>密码管理（重置密码 / 修改密码）</li>
  *   <li>个人资料（profile 查看 / 编辑）</li>
- *   <li>token 三件套签发（{@code TokenIssuerAppService}，供 sso 上下文 OIDC {@code /token} 复用）</li>
  *   <li>账号状态治理（停用 / 锁定）</li>
  * </ul>
  *
- * <p>认证入口（登录 / 注册 / 登出）在 sso 上下文 {@code /api/auth/*} + OIDC 根端点；
+ * <p>token 三件套（OIDC 产物）随 OIDC 端点归 sso 上下文（ADR-0008）；account 回归纯身份基座。
+ * 认证入口（登录 / 注册 / 登出）在 sso 上下文 {@code /api/auth/*} + OIDC 根端点；
  * 受保护接口凭 SSO cookie 经 SSO 会话过滤器认人（ADR-0004，全库只一套 SSO 会话）。</p>
  *
  * <h3>数据模型（ADR-0001）</h3>

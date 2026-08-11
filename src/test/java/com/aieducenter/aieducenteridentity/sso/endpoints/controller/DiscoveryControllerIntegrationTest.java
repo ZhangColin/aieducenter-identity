@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MvcResult;
 
-import com.aieducenter.aieducenteridentity.account.infrastructure.token.JwtTokenProperties;
+import com.aieducenter.aieducenteridentity.sso.infrastructure.token.JwtTokenProperties;
 import com.aieducenter.aieducenteridentity.sso.endpoints.SsoIntegrationTestBase;
 
 /**

@@ -1,13 +1,13 @@
-package com.aieducenter.aieducenteridentity.account.infrastructure.token;
+package com.aieducenter.aieducenteridentity.sso.infrastructure.token;
 
 import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.JwkSetView;
-import com.aieducenter.aieducenteridentity.account.domain.token.JwkView;
-import com.aieducenter.aieducenteridentity.account.domain.token.SigningKeyCatalog;
+import com.aieducenter.aieducenteridentity.sso.domain.token.JwkSetView;
+import com.aieducenter.aieducenteridentity.sso.domain.token.JwkView;
+import com.aieducenter.aieducenteridentity.sso.domain.token.SigningKeyCatalog;
 import com.cartisan.core.stereotype.Adapter;
 import com.cartisan.core.stereotype.PortType;
 import com.nimbusds.jose.jwk.RSAKey;

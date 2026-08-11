@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.domain.token;
+package com.aieducenter.aieducenteridentity.sso.domain.token;
 
 /**
  * 已验签的 access_token 摘要——{@code /userinfo} 据此定位用户 + 按授权范围过滤资料（issue #17）。

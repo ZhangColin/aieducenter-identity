@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.infrastructure.token;
+package com.aieducenter.aieducenteridentity.sso.infrastructure.token;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -9,8 +9,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenClaims;
-import com.aieducenter.aieducenteridentity.account.domain.token.VerifiedAccessToken;
+import com.aieducenter.aieducenteridentity.sso.domain.token.AccessTokenClaims;
+import com.aieducenter.aieducenteridentity.sso.domain.token.VerifiedAccessToken;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 

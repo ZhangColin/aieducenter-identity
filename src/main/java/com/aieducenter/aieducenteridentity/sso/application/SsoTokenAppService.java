@@ -2,15 +2,12 @@ package com.aieducenter.aieducenteridentity.sso.application;
 
 import org.springframework.stereotype.Service;
 
-import com.aieducenter.aieducenteridentity.account.application.TokenIssuerAppService;
-import com.aieducenter.aieducenteridentity.account.application.dto.response.LoginResponse;
-import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
-import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
-import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
-import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
-import com.aieducenter.aieducenteridentity.account.domain.token.RefreshTokenPayload;
+import com.aieducenter.aieducenteridentity.account.application.AccountSubjectAppService;
+import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectStatus;
+import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectView;
 import com.aieducenter.aieducenteridentity.sso.application.dto.TokenRequest;
 import com.aieducenter.aieducenteridentity.sso.application.dto.TokenResponse;
+import com.aieducenter.aieducenteridentity.sso.application.dto.response.IssuedTokens;
 import com.aieducenter.aieducenteridentity.sso.domain.client.ClientSecretVerifier;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientRepository;
@@ -19,14 +16,16 @@ import com.aieducenter.aieducenteridentity.sso.domain.code.IssuedAuthorizationCo
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
 import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
 import com.aieducenter.aieducenteridentity.sso.domain.session.SsoSessionRepository;
+import com.aieducenter.aieducenteridentity.sso.domain.token.RefreshTokenPayload;
 import com.cartisan.core.exception.DomainException;
 
 /**
- * /token 端点应用服务（CONTEXT「token 归 /token」/ issue #15）。
+ * /token 端点应用服务（CONTEXT「token 归 /token」/ issue #15；ADR-0008：token 三件套归属 sso）。
  *
  * <p>authorization_code grant：验 client_secret → 一次性消费 code（验绑 client/redirect_uri）→ 签
  * access/id/refresh（id 回带 nonce）。refresh_token grant：验 client → 消费 refresh 轮换 → 重新签发。
- * token 三件套签发复用 {@link TokenIssuerAppService}（无 sa-token）。</p>
+ * token 三件套签发由 sso 内的 {@link TokenIssuerAppService} 完成；subject 数据经 {@link AccountSubjectAppService}
+ * 取 {@link SubjectView}（ADR-0007：跨上下文只走应用层，不注入 account 仓储 / 不拿 account 聚合）。</p>
  *
  * @since 0.1.0
  */
@@ -40,19 +39,17 @@ public class SsoTokenAppService {
     private final ClientSecretVerifier clientSecretVerifier;
     private final AuthorizationCodeStore codeStore;
     private final TokenIssuerAppService tokenIssuer;
-    private final AccountRepository accountRepository;
-    private final ProfileRepository profileRepository;
+    private final AccountSubjectAppService accountSubjectAppService;
     private final SsoSessionRepository sessionRepository;
 
     public SsoTokenAppService(SsoClientRepository clientRepository, ClientSecretVerifier clientSecretVerifier,
-            AuthorizationCodeStore codeStore, TokenIssuerAppService tokenIssuer, AccountRepository accountRepository,
-            ProfileRepository profileRepository, SsoSessionRepository sessionRepository) {
+            AuthorizationCodeStore codeStore, TokenIssuerAppService tokenIssuer,
+            AccountSubjectAppService accountSubjectAppService, SsoSessionRepository sessionRepository) {
         this.clientRepository = clientRepository;
         this.clientSecretVerifier = clientSecretVerifier;
         this.codeStore = codeStore;
         this.tokenIssuer = tokenIssuer;
-        this.accountRepository = accountRepository;
-        this.profileRepository = profileRepository;
+        this.accountSubjectAppService = accountSubjectAppService;
         this.sessionRepository = sessionRepository;
     }
 
@@ -89,12 +86,11 @@ public class SsoTokenAppService {
             throw new OidcException(SsoError.INVALID_GRANT, "redirect_uri 与授权时不一致");
         }
 
-        Account account = loadAccount(payload.userId());
-        ensureUsable(account);
-        Profile profile = profileRepository.findById(payload.userId()).orElse(null);
+        SubjectView subject = loadSubject(payload.userId());
+        ensureUsable(subject);
         // scope 透传进 access_token，供 /userinfo 按授权范围过滤返回资料（issue #17）；
         // sessionId 透传绑进 refresh（准 SLO，issue #19）。
-        LoginResponse issued = tokenIssuer.issue(account, profile, payload.nonce(), payload.scope(), payload.sessionId());
+        IssuedTokens issued = tokenIssuer.issue(subject, payload.nonce(), payload.scope(), payload.sessionId());
         return toResponse(issued);
     }
 
@@ -110,24 +106,34 @@ public class SsoTokenAppService {
         if (payload.sessionId() == null || sessionRepository.findActive(payload.sessionId()).isEmpty()) {
             throw new OidcException(SsoError.INVALID_GRANT, "SSO 会话已失效");
         }
-        Account account = loadAccount(payload.userId());
-        ensureUsable(account);
-        Profile profile = profileRepository.findById(payload.userId()).orElse(null);
+        SubjectView subject = loadSubject(payload.userId());
+        ensureUsable(subject);
         // refresh 不携带 nonce/scope；新 refresh 绑同一仍存活的 SSO 会话。
-        LoginResponse issued = tokenIssuer.issue(account, profile, null, null, payload.sessionId());
+        IssuedTokens issued = tokenIssuer.issue(subject, null, null, payload.sessionId());
         return toResponse(issued);
     }
 
     /**
      * 账号停用/锁定则拒发 token——OIDC 形态（invalid_grant），而非内部领域异常。
      *
-     * <p>身份已由 code/refresh 证明；账号在签发与换 token 之间被封禁时，换 token 失败。</p>
+     * <p>身份已由 code/refresh 证明；账号在签发与换 token 之间被封禁时，换 token 失败。
+     * 可用性由 {@link SubjectView#status()} 表达（ADR-0008：调用方自决 gate——token 路径判 usable 抛）。</p>
      */
-    private void ensureUsable(Account account) {
-        try {
-            account.ensureLoginable();
-        } catch (DomainException ex) {
+    private void ensureUsable(SubjectView subject) {
+        if (subject.status() != SubjectStatus.USABLE) {
             throw new OidcException(SsoError.INVALID_GRANT, "账号已停用或锁定");
+        }
+    }
+
+    /**
+     * 取 subject 读模型——code/refresh 指向的账号已删时，{@link AccountSubjectAppService#subjectClaims} 抛
+     * {@link DomainException}，统一映射 invalid_grant（不引 account 域错误码——ADR-0007 跨上下文不走 domain 错误）。
+     */
+    private SubjectView loadSubject(Long userId) {
+        try {
+            return accountSubjectAppService.subjectClaims(userId);
+        } catch (DomainException ex) {
+            throw new OidcException(SsoError.INVALID_GRANT, "用户不存在");
         }
     }
 
@@ -149,12 +155,7 @@ public class SsoTokenAppService {
         }
     }
 
-    private Account loadAccount(Long userId) {
-        return accountRepository.findById(userId)
-            .orElseThrow(() -> new OidcException(SsoError.INVALID_GRANT, "用户不存在"));
-    }
-
-    private static TokenResponse toResponse(LoginResponse issued) {
+    private static TokenResponse toResponse(IssuedTokens issued) {
         return new TokenResponse(
             issued.accessToken(), issued.tokenType(), issued.expiresIn(),
             issued.refreshToken(), issued.idToken());

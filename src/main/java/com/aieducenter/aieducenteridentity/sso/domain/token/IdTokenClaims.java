@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.domain.token;
+package com.aieducenter.aieducenteridentity.sso.domain.token;
 
 import java.time.Instant;
 import java.util.List;

@@ -6,7 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenDecoder;
+import com.aieducenter.aieducenteridentity.sso.domain.token.IdTokenDecoder;
 import com.aieducenter.aieducenteridentity.sso.application.dto.LogoutResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;

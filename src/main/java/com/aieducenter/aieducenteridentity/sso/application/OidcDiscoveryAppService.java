@@ -4,8 +4,8 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.JwkSetView;
-import com.aieducenter.aieducenteridentity.account.domain.token.SigningKeyCatalog;
+import com.aieducenter.aieducenteridentity.sso.domain.token.JwkSetView;
+import com.aieducenter.aieducenteridentity.sso.domain.token.SigningKeyCatalog;
 import com.aieducenter.aieducenteridentity.sso.application.dto.DiscoveryResponse;
 
 /**

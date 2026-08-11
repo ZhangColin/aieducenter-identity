@@ -1,11 +1,11 @@
-package com.aieducenter.aieducenteridentity.account.infrastructure.token;
+package com.aieducenter.aieducenteridentity.sso.infrastructure.token;
 
 import java.text.ParseException;
 import java.util.Optional;
 
 import org.springframework.stereotype.Component;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.IdTokenDecoder;
+import com.aieducenter.aieducenteridentity.sso.domain.token.IdTokenDecoder;
 import com.cartisan.core.stereotype.Adapter;
 import com.cartisan.core.stereotype.PortType;
 import com.nimbusds.jwt.JWTClaimsSet;

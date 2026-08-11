@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.account.infrastructure.token;
+package com.aieducenter.aieducenteridentity.sso.infrastructure.token;
 
 import java.text.ParseException;
 import java.util.Optional;
@@ -7,8 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import com.aieducenter.aieducenteridentity.account.domain.token.AccessTokenVerifier;
-import com.aieducenter.aieducenteridentity.account.domain.token.VerifiedAccessToken;
+import com.aieducenter.aieducenteridentity.sso.domain.token.AccessTokenVerifier;
+import com.aieducenter.aieducenteridentity.sso.domain.token.VerifiedAccessToken;
 import com.cartisan.core.stereotype.Adapter;
 import com.cartisan.core.stereotype.PortType;
 import com.nimbusds.jose.JOSEException;
