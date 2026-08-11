@@ -140,38 +140,4 @@ public class SsoProperties {
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
     }
-
-    // ── dev 一键登（#16：identity-web 缺席时兜登录页；仅 dev/local，prod 不开此开关） ——
-
-    /** dev 一键登配置（开关 + 预置测试账号）。 */
-    private DevLogin devLogin = new DevLogin();
-
-    public DevLogin getDevLogin() {
-        return devLogin;
-    }
-
-    public void setDevLogin(DevLogin devLogin) {
-        this.devLogin = devLogin;
-    }
-
-    /** dev 一键登配置项。开关默认 false；开启后 {@code /authorize} 无 cookie 跳本端点、自动登预置账号。 */
-    public static class DevLogin {
-        /** 是否启用 dev 一键登（prod 必须为 false）。 */
-        private boolean enabled = false;
-        /** 预置测试账号邮箱（dev-login 按此定位账号）。 */
-        private String accountEmail = "demo@aieducenter.com";
-        /** 预置测试账号明文密码（seeder 加密入库；也供真实登录页联调用）。 */
-        private String accountPassword = "demo12345";
-        /** 预置测试账号昵称。 */
-        private String accountNickname = "Demo 用户";
-
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getAccountEmail() { return accountEmail; }
-        public void setAccountEmail(String accountEmail) { this.accountEmail = accountEmail; }
-        public String getAccountPassword() { return accountPassword; }
-        public void setAccountPassword(String accountPassword) { this.accountPassword = accountPassword; }
-        public String getAccountNickname() { return accountNickname; }
-        public void setAccountNickname(String accountNickname) { this.accountNickname = accountNickname; }
-    }
 }
