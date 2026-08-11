@@ -46,12 +46,12 @@ public enum VerificationCodeError implements CodeMessage {
     /**
      * 邮箱限流。
      */
-    RATE_LIMIT_EMAIL("VERIFICATION_RATE_LIMIT_EMAIL", "请60秒后再试", 429),
+    RATE_LIMIT_EMAIL("VERIFICATION_RATE_LIMIT_EMAIL", "发送过于频繁，请稍后再试", 429),
 
     /**
      * 手机号限流。
      */
-    RATE_LIMIT_PHONE("VERIFICATION_RATE_LIMIT_PHONE", "请60秒后再试", 429),
+    RATE_LIMIT_PHONE("VERIFICATION_RATE_LIMIT_PHONE", "发送过于频繁，请稍后再试", 429),
 
     /**
      * IP限流。
