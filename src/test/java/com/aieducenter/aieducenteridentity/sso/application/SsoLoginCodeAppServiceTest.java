@@ -23,9 +23,9 @@ import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.domain.error.SsoAuthError;
 import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
 import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
-import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
 import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.DomainException;
 
@@ -33,7 +33,7 @@ import com.cartisan.core.exception.DomainException;
  * sso 验证码登录经 {@link AccountAuthAppService#authenticateByIdentifier} 委托。
  *
  * <p>核心契约：{@code authenticateByIdentifier} 在账号定位不到时抛 {@link ApplicationException}(
- * {@code ACCOUNT_NOT_FOUND})——本服务<b>翻译</b>为与错码同一的 {@link VerificationCodeError#CODE_INVALID}
+ * {@code ACCOUNT_NOT_FOUND})——本服务<b>翻译</b>为与错码同一的 {@link SsoAuthError#CODE_INVALID}
  * （防枚举）；停用/锁定是 {@link DomainException}，<b>原样透传</b>（身份已证明，告知不构成枚举）。</p>
  */
 class SsoLoginCodeAppServiceTest {
@@ -95,14 +95,14 @@ class SsoLoginCodeAppServiceTest {
 
     @Test
     void given_wrong_code_when_login_then_code_invalid_and_no_authenticate_no_session() {
-        doThrow(new DomainException(VerificationCodeError.CODE_INVALID))
+        doThrow(new DomainException(SsoAuthError.CODE_INVALID))
             .when(verificationCodePort).verifyCode(EMAIL, "000000", "LOGIN");
 
         assertThatThrownBy(() -> service.loginByCode(
             new LoginByCodeSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null, EMAIL, "000000")))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
-            .isEqualTo(VerificationCodeError.CODE_INVALID);
+            .isEqualTo(SsoAuthError.CODE_INVALID);
         verify(accountAuth, never()).authenticateByIdentifier(any());
         verify(loginCompletion, never()).completeLogin(any(), any(), any(), any(), any(), any());
     }
@@ -116,7 +116,7 @@ class SsoLoginCodeAppServiceTest {
         assertThatThrownBy(() -> service.loginByCode(emailCommand()))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
-            .isEqualTo(VerificationCodeError.CODE_INVALID);
+            .isEqualTo(SsoAuthError.CODE_INVALID);
         verify(loginCompletion, never()).completeLogin(any(), any(), any(), any(), any(), any());
     }
 

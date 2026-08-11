@@ -11,9 +11,8 @@ import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.domain.error.SsoAuthError;
 import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
-import com.aieducenter.aieducenteridentity.verification.domain.enums.VerificationPurpose;
-import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
 import com.cartisan.core.exception.DomainException;
 
 /**
@@ -34,8 +33,8 @@ import com.cartisan.core.exception.DomainException;
 @Service
 public class SsoRegisterAppService {
 
-    /** 验证码用途：注册（与登录的 LOGIN 分键，互不串用）。 */
-    private static final String REGISTER_PURPOSE = VerificationPurpose.REGISTER.name();
+    /** 验证码用途：注册（与登录的 LOGIN 分键，互不串用；字面量需与 verification 枚举名一致，经 ACL port 传 String）。 */
+    private static final String REGISTER_PURPOSE = "REGISTER";
 
     private final SsoClientValidationService clientValidation;
     private final AccountAuthAppService accountAuth;
@@ -91,7 +90,7 @@ public class SsoRegisterAppService {
     /** 验证码必填兜底：空白等同错码（CODE_INVALID），不进 Redis 查询。 */
     private static String requireCode(String code) {
         if (code == null || code.isBlank()) {
-            throw new DomainException(VerificationCodeError.CODE_INVALID);
+            throw new DomainException(SsoAuthError.CODE_INVALID);
         }
         return code.trim();
     }

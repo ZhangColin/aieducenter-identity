@@ -25,9 +25,9 @@ import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.domain.error.SsoAuthError;
 import com.aieducenter.aieducenteridentity.sso.domain.error.SsoError;
 import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
-import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
 import com.cartisan.core.exception.DomainException;
 
 /**
@@ -93,13 +93,13 @@ class SsoRegisterAppServiceTest {
 
     @Test
     void given_wrong_email_code_when_register_then_code_invalid_and_no_register() {
-        doThrow(new DomainException(VerificationCodeError.CODE_INVALID))
+        doThrow(new DomainException(SsoAuthError.CODE_INVALID))
             .when(verificationCodePort).verifyCode(EMAIL, "000000", "REGISTER");
 
         assertThatThrownBy(() -> service.register(emailCommand("000000", PASSWORD)))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
-            .isEqualTo(VerificationCodeError.CODE_INVALID);
+            .isEqualTo(SsoAuthError.CODE_INVALID);
         verify(accountAuth, never()).register(any());
     }
 
@@ -108,7 +108,7 @@ class SsoRegisterAppServiceTest {
         assertThatThrownBy(() -> service.register(emailCommand(null, PASSWORD)))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
-            .isEqualTo(VerificationCodeError.CODE_INVALID);
+            .isEqualTo(SsoAuthError.CODE_INVALID);
         verify(verificationCodePort, never()).verifyCode(any(), any(), any());
         verify(accountAuth, never()).register(any());
     }
@@ -149,14 +149,14 @@ class SsoRegisterAppServiceTest {
 
     @Test
     void given_both_contacts_but_phone_code_wrong_when_register_then_no_register() {
-        doThrow(new DomainException(VerificationCodeError.CODE_INVALID))
+        doThrow(new DomainException(SsoAuthError.CODE_INVALID))
             .when(verificationCodePort).verifyPhoneCode(PHONE, "000000", "REGISTER");
 
         assertThatThrownBy(() -> service.register(new RegisterSsoCommand(CLIENT_ID, REDIRECT_URI, null, null, null,
             EMAIL, PHONE, EMAIL_CODE, "000000", PASSWORD)))
             .isInstanceOf(DomainException.class)
             .extracting(ex -> ((DomainException) ex).getCodeMessage())
-            .isEqualTo(VerificationCodeError.CODE_INVALID);
+            .isEqualTo(SsoAuthError.CODE_INVALID);
         verify(accountAuth, never()).register(any());
     }
 

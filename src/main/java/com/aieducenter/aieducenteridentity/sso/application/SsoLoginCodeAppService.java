@@ -10,9 +10,8 @@ import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
+import com.aieducenter.aieducenteridentity.sso.domain.error.SsoAuthError;
 import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
-import com.aieducenter.aieducenteridentity.verification.domain.enums.VerificationPurpose;
-import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
 import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.DomainException;
 
@@ -25,18 +24,19 @@ import com.cartisan.core.exception.DomainException;
  * 不设密码的账号（注册时密码可选）由此入口登录。</p>
  *
  * <h3>防用户枚举</h3>
- * <p>「账号不存在」与「验证码错误」同一响应：错码由 verification 抛 {@link VerificationCodeError#CODE_INVALID}；
- * 验码通过但账号不存在时，{@code authenticateByIdentifier} 抛 {@code ApplicationException(ACCOUNT_NOT_FOUND)}，
- * 本服务翻译为同一 {@code CODE_INVALID}（同一 code+message+status，不暴露账号存在性）。
- * 停用/锁定是 {@code DomainException}（身份已证明后才告知，不构成枚举），原样向上抛。</p>
+ * <p>「账号不存在」与「验证码错误」同一响应：错码由 verification 抛 {@code DomainException}（经 ACL port 透传，
+ * sso 不引其错误码类）；验码通过但账号不存在时，{@code authenticateByIdentifier} 抛
+ * {@code ApplicationException(ACCOUNT_NOT_FOUND)}，本服务翻译为同一 {@link SsoAuthError#CODE_INVALID}
+ * （同一 code+message+status，不暴露账号存在性）。停用/锁定是 {@code DomainException}（身份已证明后才告知，
+ * 不构成枚举），原样向上抛。</p>
  *
  * @since 0.1.0
  */
 @Service
 public class SsoLoginCodeAppService {
 
-    /** 验证码用途：登录（与注册的 REGISTER 分键，互不串用）。 */
-    private static final String LOGIN_PURPOSE = VerificationPurpose.LOGIN.name();
+    /** 验证码用途：登录（与注册的 REGISTER 分键，互不串用；字面量需与 verification 枚举名一致，经 ACL port 传 String）。 */
+    private static final String LOGIN_PURPOSE = "LOGIN";
 
     private final SsoClientValidationService clientValidation;
     private final AccountAuthAppService accountAuth;
@@ -73,14 +73,14 @@ public class SsoLoginCodeAppService {
             verificationCodePort.verifyPhoneCode(account, command.code(), LOGIN_PURPOSE);
         }
 
-        // 防枚举：验码通过但账号不存在 → 与错码同一 CODE_INVALID。
+        // 防枚举：验码通过但账号不存在 → 与错码同一 CODE_INVALID（sso 自有码，见 SsoAuthError）。
         // authenticateByIdentifier 仅在账号定位不到时抛 ApplicationException(ACCOUNT_NOT_FOUND)；
         // 停用/锁定是 DomainException，不在此处处理——原样向上抛（身份已证明，不构成枚举）。
         SubjectView subject;
         try {
             subject = accountAuth.authenticateByIdentifier(account);
         } catch (ApplicationException e) {
-            throw new DomainException(VerificationCodeError.CODE_INVALID);
+            throw new DomainException(SsoAuthError.CODE_INVALID);
         }
 
         return loginCompletion.completeLogin(subject, client, command.redirectUri(),
