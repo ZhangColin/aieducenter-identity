@@ -170,13 +170,19 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
             .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
     }
 
+    /**
+     * 防枚举（#51 后）：重复联络方式需<b>先验码</b>（证明邮箱/手机归属）才告知已注册——
+     * 故取有效 REGISTER 码，验过才到 accountAuth.register 的唯一性检查抛 409。
+     * 旧实现「唯一性先于验码」会把存在性泄露给未验码者，已随 sso 改走 account AppService 一并收紧。
+     */
     @Test
     void given_existing_email_when_register_then_409_and_no_second_account() throws Exception {
         createEmailAccount(EMAIL, PASSWORD);
+        String emailCode = sendEmailCode(EMAIL, "REGISTER");
 
         mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(registerBody(EMAIL, null, "000000", null, PASSWORD)))
+                .content(registerBody(EMAIL, null, emailCode, null, PASSWORD)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").exists());
 
@@ -188,10 +194,11 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     @Test
     void given_existing_phone_when_register_then_409() throws Exception {
         createPhoneAccount(PHONE, PASSWORD);
+        String phoneCode = sendSmsCode(PHONE, "REGISTER");
 
         mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(registerBody(null, PHONE, null, "000000", PASSWORD)))
+                .content(registerBody(null, PHONE, null, phoneCode, PASSWORD)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").exists());
     }
@@ -332,16 +339,18 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         assertThat(id2.getStringClaim("phone_number")).isEqualTo(id1.getStringClaim("phone_number"));
     }
 
+    /** form 变体同 JSON：重复 email 需先验有效码（防枚举）才到 409。 */
     @Test
     void given_existing_email_when_register_via_form_then_409() throws Exception {
         createEmailAccount(EMAIL, PASSWORD);
+        String emailCode = sendEmailCode(EMAIL, "REGISTER");
 
         mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)
                 .param("redirectUri", REDIRECT_URI)
                 .param("email", EMAIL)
-                .param("emailCode", "000000")
+                .param("emailCode", emailCode)
                 .param("password", PASSWORD))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").exists());

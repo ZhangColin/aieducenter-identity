@@ -3,8 +3,8 @@ package com.aieducenter.aieducenteridentity.sso.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
-import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
+import com.aieducenter.aieducenteridentity.account.application.AccountAuthAppService;
+import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectView;
 import com.aieducenter.aieducenteridentity.sso.application.dto.LoginByCodeSsoCommand;
 import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
@@ -13,19 +13,22 @@ import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
 import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
 import com.aieducenter.aieducenteridentity.verification.domain.enums.VerificationPurpose;
 import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
+import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.DomainException;
 
 /**
  * /api/auth/login-code 验证码登录（CONTEXT 登录契约 / issue #22）。
  *
- * <p>校验 client/redirect_uri → 验码（purpose=LOGIN，经 verification 上下文）→ 定位账号 →
- * {@link SsoLoginCompletionAppService 统一后半段}：建 SSO 会话 → 发 code。
+ * <p>校验 client/redirect_uri → 验码（purpose=LOGIN，经 verification 上下文）→
+ * 凭已验证联络方式认证（经 {@link AccountAuthAppService#authenticateByIdentifier}：定位账号 + 停用/锁定 +
+ * recordLogin，返 {@link SubjectView}）→ {@link SsoLoginCompletionAppService 统一后半段}：建 SSO 会话 → 发 code。
  * 不设密码的账号（注册时密码可选）由此入口登录。</p>
  *
  * <h3>防用户枚举</h3>
  * <p>「账号不存在」与「验证码错误」同一响应：错码由 verification 抛 {@link VerificationCodeError#CODE_INVALID}；
- * 验码通过但账号不存在（LOGIN 码可对任意联络方式下发）补抛同一 {@code CODE_INVALID}——同一 code+message+status，
- * 不暴露账号存在性。停用/锁定在验码通过（身份已证明）后才告知，不构成枚举。</p>
+ * 验码通过但账号不存在时，{@code authenticateByIdentifier} 抛 {@code ApplicationException(ACCOUNT_NOT_FOUND)}，
+ * 本服务翻译为同一 {@code CODE_INVALID}（同一 code+message+status，不暴露账号存在性）。
+ * 停用/锁定是 {@code DomainException}（身份已证明后才告知，不构成枚举），原样向上抛。</p>
  *
  * @since 0.1.0
  */
@@ -36,14 +39,14 @@ public class SsoLoginCodeAppService {
     private static final String LOGIN_PURPOSE = VerificationPurpose.LOGIN.name();
 
     private final SsoClientValidationService clientValidation;
-    private final AccountRepository accountRepository;
+    private final AccountAuthAppService accountAuth;
     private final VerificationCodePort verificationCodePort;
     private final SsoLoginCompletionAppService loginCompletion;
 
-    public SsoLoginCodeAppService(SsoClientValidationService clientValidation, AccountRepository accountRepository,
+    public SsoLoginCodeAppService(SsoClientValidationService clientValidation, AccountAuthAppService accountAuth,
             VerificationCodePort verificationCodePort, SsoLoginCompletionAppService loginCompletion) {
         this.clientValidation = clientValidation;
-        this.accountRepository = accountRepository;
+        this.accountAuth = accountAuth;
         this.verificationCodePort = verificationCodePort;
         this.loginCompletion = loginCompletion;
     }
@@ -70,20 +73,17 @@ public class SsoLoginCodeAppService {
             verificationCodePort.verifyPhoneCode(account, command.code(), LOGIN_PURPOSE);
         }
 
-        // 防枚举：验码通过但账号不存在 → 与错码同一 CODE_INVALID
-        Account found = isEmail
-            ? accountRepository.findByEmail(account).orElse(null)
-            : accountRepository.findByPhone(account).orElse(null);
-        if (found == null) {
+        // 防枚举：验码通过但账号不存在 → 与错码同一 CODE_INVALID。
+        // authenticateByIdentifier 仅在账号定位不到时抛 ApplicationException(ACCOUNT_NOT_FOUND)；
+        // 停用/锁定是 DomainException，不在此处处理——原样向上抛（身份已证明，不构成枚举）。
+        SubjectView subject;
+        try {
+            subject = accountAuth.authenticateByIdentifier(account);
+        } catch (ApplicationException e) {
             throw new DomainException(VerificationCodeError.CODE_INVALID);
         }
 
-        // 身份已证明——告知停用/锁定不构成枚举
-        found.ensureLoginable();
-        found.recordLogin();
-        accountRepository.save(found);
-
-        return loginCompletion.completeLogin(found, client, command.redirectUri(),
+        return loginCompletion.completeLogin(subject, client, command.redirectUri(),
             command.nonce(), command.scope(), command.state());
     }
 }

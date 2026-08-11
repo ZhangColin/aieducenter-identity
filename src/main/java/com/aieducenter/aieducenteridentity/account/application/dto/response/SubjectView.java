@@ -59,6 +59,19 @@ public record SubjectView(
     }
 
     /**
+     * 显示标签：昵称（非空）优先，其次邮箱，其次手机号——供 SSO 会话显示名 / token 写入。
+     *
+     * <p>口径与 {@code Account.displayLabel(String)} 一致（昵称空则落联络方式）。
+     * sso 后半段建会话只经此读模型取显示名，不再回读 {@link Account} 聚合（ADR-0007）。</p>
+     */
+    public String displayLabel() {
+        if (nickname != null && !nickname.isBlank()) {
+            return nickname;
+        }
+        return email != null ? email : phone;
+    }
+
+    /**
      * 可用性投影——优先级与 {@code Account.ensureLoginable()} 一致：停用优先于锁定。
      */
     private static SubjectStatus availabilityOf(Account account) {

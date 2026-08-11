@@ -3,10 +3,9 @@ package com.aieducenter.aieducenteridentity.sso.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
-import com.aieducenter.aieducenteridentity.account.domain.error.AccountError;
-import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
-import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
+import com.aieducenter.aieducenteridentity.account.application.AccountAuthAppService;
+import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterAccountCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectView;
 import com.aieducenter.aieducenteridentity.sso.application.dto.RegisterSsoCommand;
 import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
@@ -20,13 +19,14 @@ import com.cartisan.core.exception.DomainException;
 /**
  * /api/auth/register 注册（CONTEXT 注册 / issue #18、#22）。
  *
- * <p>校验 client/redirect_uri → 唯一性（email/phone 全局唯一，重复 409 不建第二个号）→
- * 当场验码（提供的联络方式各验各的码，purpose=REGISTER，<b>验不过不建号</b>）→ 建号
- * （密码可选：设了 hash 落库走密码登，没设走 /api/auth/login-code 验证码登；
- * 联络方式格式由 {@link Account#register} 不变量校验）→ 注册即登录：
+ * <p>校验 client/redirect_uri → 当场验码（提供的联络方式各验各的码，purpose=REGISTER，<b>验不过不建号</b>）→
+ * 建号（经 {@link AccountAuthAppService#register}：唯一性 + 密码可选 encode + {@code Account.register} +
+ * recordLogin，返 {@link SubjectView}；联络方式格式由聚合不变量校验）→ 注册即登录：
  * {@link SsoLoginCompletionAppService 统一后半段}（与 login 同一发码契约）。</p>
  *
- * <p>注册失败（重复/格式错/验码不过）抛 {@link DomainException}（留注册页显示，不回业务应用）；
+ * <p>注：唯一性检查收在 {@code AccountAuthAppService.register} 内，<b>在验码之后</b>——
+ * 故重复联络方式会先消耗验证码再抛 {@code EMAIL_ALREADY_EXISTS}/{@code PHONE_ALREADY_EXISTS}（409）。
+ * 这反而收紧了防枚举：未验码者拿不到存在性信息。注册失败抛 {@link DomainException}（留注册页显示，不回业务应用）；
  * client/redirect_uri 无效抛 {@link OidcException}（不重定向，与 login 一致）。</p>
  *
  * @since 0.1.0
@@ -38,17 +38,14 @@ public class SsoRegisterAppService {
     private static final String REGISTER_PURPOSE = VerificationPurpose.REGISTER.name();
 
     private final SsoClientValidationService clientValidation;
-    private final AccountRepository accountRepository;
-    private final AccountPasswordEncoderService passwordEncoderService;
+    private final AccountAuthAppService accountAuth;
     private final VerificationCodePort verificationCodePort;
     private final SsoLoginCompletionAppService loginCompletion;
 
-    public SsoRegisterAppService(SsoClientValidationService clientValidation, AccountRepository accountRepository,
-            AccountPasswordEncoderService passwordEncoderService, VerificationCodePort verificationCodePort,
-            SsoLoginCompletionAppService loginCompletion) {
+    public SsoRegisterAppService(SsoClientValidationService clientValidation, AccountAuthAppService accountAuth,
+            VerificationCodePort verificationCodePort, SsoLoginCompletionAppService loginCompletion) {
         this.clientValidation = clientValidation;
-        this.accountRepository = accountRepository;
-        this.passwordEncoderService = passwordEncoderService;
+        this.accountAuth = accountAuth;
         this.verificationCodePort = verificationCodePort;
         this.loginCompletion = loginCompletion;
     }
@@ -67,12 +64,6 @@ public class SsoRegisterAppService {
 
         String email = normalizeContact(command.email());
         String phone = normalizeContact(command.phone());
-        if (email != null && accountRepository.existsByEmail(email)) {
-            throw new DomainException(AccountError.EMAIL_ALREADY_EXISTS);
-        }
-        if (phone != null && accountRepository.existsByPhone(phone)) {
-            throw new DomainException(AccountError.PHONE_ALREADY_EXISTS);
-        }
 
         // 当场验码：提供的联络方式各验各的码——未验的联络方式不落库（防占用他人联络方式）
         if (email != null) {
@@ -82,15 +73,10 @@ public class SsoRegisterAppService {
             verificationCodePort.verifyPhoneCode(phone, requireCode(command.phoneCode()), REGISTER_PURPOSE);
         }
 
-        // 密码可选（不设密码的账号后续用 login-code 登）
-        String passwordHash = command.password() != null && !command.password().isBlank()
-            ? passwordEncoderService.encodePassword(command.password())
-            : null;
-        Account account = Account.register(email, phone, passwordHash);
-        account.recordLogin();
-        accountRepository.save(account);
+        // 建号收在 account 应用层：唯一性 + 密码可选 encode + 聚合不变量 + recordLogin，返 SubjectView
+        SubjectView subject = accountAuth.register(new RegisterAccountCommand(email, phone, command.password()));
 
-        return loginCompletion.completeLogin(account, client, command.redirectUri(),
+        return loginCompletion.completeLogin(subject, client, command.redirectUri(),
             command.nonce(), command.scope(), command.state());
     }
 
