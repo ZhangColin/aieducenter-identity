@@ -22,6 +22,7 @@ import com.aieducenter.aieducenteridentity.account.domain.error.AccountError;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
+import com.aieducenter.aieducenteridentity.account.infrastructure.verification.VerificationCodePort;
 import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.CartisanException;
 import com.cartisan.core.exception.DomainException;
@@ -42,9 +43,10 @@ class AccountAuthAppServiceTest {
     private final AccountRepository accountRepository = mock(AccountRepository.class);
     private final AccountPasswordEncoderService passwordEncoderService = mock(AccountPasswordEncoderService.class);
     private final ProfileRepository profileRepository = mock(ProfileRepository.class);
+    private final VerificationCodePort verificationCodePort = mock(VerificationCodePort.class);
 
     private final AccountAuthAppService service = new AccountAuthAppService(
-        accountRepository, passwordEncoderService, profileRepository);
+        accountRepository, passwordEncoderService, profileRepository, verificationCodePort);
 
     // ========== authenticate ==========
 

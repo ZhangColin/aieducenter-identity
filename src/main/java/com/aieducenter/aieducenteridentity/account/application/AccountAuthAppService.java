@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterAccountCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectView;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
@@ -11,20 +12,27 @@ import com.aieducenter.aieducenteridentity.account.domain.error.AccountError;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepository;
 import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.aieducenter.aieducenteridentity.account.domain.service.AccountPasswordEncoderService;
+import com.aieducenter.aieducenteridentity.account.infrastructure.verification.VerificationCodePort;
 import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.DomainException;
 
 /**
- * 账号认证 / 建号应用服务——account 上下文给 sso（及未来非-SSO 应用）的「认人 / 建号」契约缝（ADR-0007/0008）。
+ * 账号认证 / 建号应用服务——account 上下文给 sso（及签名服务）的「认人 / 建号」契约缝（ADR-0007/0008）。
  *
  * <p>把「定位 → 凭据校验 → 账号状态机（{@code ensureLoginable} / {@code recordLogin}）→ save」内聚成应用层方法，
  * 返回统一读模型 {@link SubjectView}。sso 不再直穿 account domain（注入仓储 / 拿聚合 / 调域服务 / 抛域错误），
  * 只经本面与 account 交往。</p>
  *
- * <h3>不验码</h3>
- * <p>本服务<b>不做验证码校验</b>——验码归 verification 上下文、由调用方（sso 等）完成。{@code authenticateByIdentifier}
- * 与 {@code register} 都信任调用方已验过联络方式（与 {@code Account.register} 契约「由调用方保证已当场发码验证」一致）。
- * account 只认人 / 建号。</p>
+ * <h3>验码：两套入口</h3>
+ * <p>验码归 verification 上下文，但「谁去验」按调用方分两套入口：</p>
+ * <ul>
+ *   <li><b>信任调用方</b>（{@code authenticateByIdentifier} / {@code register}）：不验码——调用方（sso 等）
+ *       自验过联络方式再调本方法（与 {@code Account.register} 契约「由调用方保证已当场发码验证」一致）。</li>
+ *   <li><b>account 自验码</b>（{@code authenticateByCode} / {@code registerByCode}，签名服务 #59）：
+ *       入参带 {@code code}，本服务经 {@link VerificationCodePort} 当场验码再委托上面两个信任入口。
+ *       供签名服务（{@code /api/account/*}，调用方只持 apiKey、不自己跑 verification 闭环）。</li>
+ * </ul>
+ * <p>两套入口共享同一领域逻辑（定位 / 状态机 / 建号唯一性），验码只是签名入口的前置 gate——领域逻辑不重写、不重测。</p>
  *
  * <h3>事务边界</h3>
  * <p>本类整块为 account 自己的 {@code @Transactional}——凭据校验 + 状态机 + save 在同一事务内，
@@ -36,15 +44,23 @@ import com.cartisan.core.exception.DomainException;
 @Transactional
 public class AccountAuthAppService {
 
+    /** 验证码用途：登录（字面量需与 verification 枚举 {@code VerificationPurpose.LOGIN} 一致，经 ACL port 传 String）。 */
+    private static final String LOGIN_PURPOSE = "LOGIN";
+    /** 验证码用途：注册（与登录的 LOGIN 分键，互不串用；字面量需与 {@code VerificationPurpose.REGISTER} 一致）。 */
+    private static final String REGISTER_PURPOSE = "REGISTER";
+
     private final AccountRepository accountRepository;
     private final AccountPasswordEncoderService passwordEncoderService;
     private final ProfileRepository profileRepository;
+    private final VerificationCodePort verificationCodePort;
 
     public AccountAuthAppService(AccountRepository accountRepository,
-            AccountPasswordEncoderService passwordEncoderService, ProfileRepository profileRepository) {
+            AccountPasswordEncoderService passwordEncoderService, ProfileRepository profileRepository,
+            VerificationCodePort verificationCodePort) {
         this.accountRepository = accountRepository;
         this.passwordEncoderService = passwordEncoderService;
         this.profileRepository = profileRepository;
+        this.verificationCodePort = verificationCodePort;
     }
 
     /**
@@ -136,6 +152,67 @@ public class AccountAuthAppService {
         accountRepository.save(account);
         // 新号尚无 Profile（Profile 由资料编辑 / 社交登录另建）——nickname/avatar 为 null
         return SubjectView.of(account, null);
+    }
+
+    /**
+     * 验证码登录（签名服务入口，#59）——验码（purpose=LOGIN）→ 委托 {@link #authenticateByIdentifier}。
+     *
+     * <p>与 {@code authenticateByIdentifier}（信任调用方已验码）的区别：本方法入参带 {@code code}，
+     * account 自验码（经 {@link VerificationCodePort}）。验码失败抛 {@code DomainException}（CODE_INVALID 等，
+     * 经 ACL port 透传 verification 错误码）；验过后委托既有 {@code authenticateByIdentifier}——
+     * 定位 / 状态机 / recordLogin 领域逻辑不重写。</p>
+     *
+     * @param identifier 邮箱或手机号（含 {@code @} 走邮箱验码、否则手机）
+     * @param code       验证码
+     * @return 已认证 subject 读模型
+     * @throws DomainException CODE_INVALID / CODE_EXPIRED / CODE_ALREADY_USED（验码失败）；
+     *                         ACCOUNT_DISABLED / ACCOUNT_LOCKED（身份已证明后才告知）
+     * @throws ApplicationException ACCOUNT_NOT_FOUND（验码通过但账号不存在）
+     */
+    public SubjectView authenticateByCode(String identifier, String code) {
+        verifyContactCode(identifier, code, LOGIN_PURPOSE);
+        return authenticateByIdentifier(identifier);
+    }
+
+    /**
+     * 验证码注册（签名服务入口，#59）——验码（purpose=REGISTER，提供的联络方式各验各的码）→ 委托 {@link #register}。
+     *
+     * <p>与 {@code register}（信任调用方已验码）的区别：本方法入参带 {@code code}，account 自验码。
+     * <b>验不过不建号</b>（防占用他人联络方式）；验过后委托既有 {@code register}——唯一性 / 密码 encode /
+     * 聚合不变量领域逻辑不重写。email/phone 至少其一（都没给则不验码、交 {@code register} 抛 CONTACT_REQUIRED）；
+     * 两者都给时验 email 的码。</p>
+     *
+     * @param command 建号命令（email/phone 至少其一 + code + 可选密码）
+     * @return 新建账号的 subject 读模型
+     * @throws DomainException CONTACT_REQUIRED / EMAIL_INVALID / PHONE_INVALID / CODE_INVALID（400）；
+     *                         EMAIL_ALREADY_EXISTS / PHONE_ALREADY_EXISTS（409）
+     */
+    public SubjectView registerByCode(RegisterByCodeCommand command) {
+        verifyRegisterCode(command.email(), command.phone(), command.code());
+        return register(new RegisterAccountCommand(command.email(), command.phone(), command.password()));
+    }
+
+    /**
+     * 验联络方式验证码：identifier 含 {@code @} 走邮箱、否则走手机（与 {@code authenticateByIdentifier} 口径一致）。
+     */
+    private void verifyContactCode(String identifier, String code, String purpose) {
+        String contact = identifier.trim();
+        if (contact.contains("@")) {
+            verificationCodePort.verifyCode(contact, code, purpose);
+        } else {
+            verificationCodePort.verifyPhoneCode(contact, code, purpose);
+        }
+    }
+
+    /**
+     * 注册验码：提供的联络方式各验各的码——email 优先；都没给则不验（交 {@code register} 抛 CONTACT_REQUIRED）。
+     */
+    private void verifyRegisterCode(String email, String phone, String code) {
+        if (email != null && !email.isBlank()) {
+            verificationCodePort.verifyCode(email.trim(), code, REGISTER_PURPOSE);
+        } else if (phone != null && !phone.isBlank()) {
+            verificationCodePort.verifyPhoneCode(phone.trim(), code, REGISTER_PURPOSE);
+        }
     }
 
     /**
