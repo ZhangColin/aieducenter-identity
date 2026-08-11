@@ -53,7 +53,8 @@ public class SsoProperties {
     private String errorPageUrl = "https://identity.localhost/error";
 
     /** 受 SSO 会话保护的路径（无有效 SSO cookie → 401）。 */
-    private List<String> protectedPaths = new ArrayList<>(List.of("/api/account/me", "/api/account/profile"));
+    private List<String> protectedPaths =
+        new ArrayList<>(List.of("/api/sso/me", "/api/sso/profile"));
 
     // ── app-registry 远程解析（#30：消费 app-registry bootstrap 端点替 stub 消费方） ──
 

@@ -24,9 +24,9 @@ import jakarta.servlet.http.Cookie;
 /**
  * SSO 首次密码登录闭环端到端测试（issue #15 AC 总验收）。
  *
- * <p>一条完整链路：/authorize（无会话→登录页透传）→ /api/auth/login（建会话+种 cookie+发 code）→
+ * <p>一条完整链路：/authorize（无会话→登录页透传）→ /api/sso/login（建会话+种 cookie+发 code）→
  * /token（code 换 access/id/refresh，id 回带 nonce、公钥验签）→ 二次 /authorize（凭 cookie 免登直发 code）→
- * /api/account/me（凭 cookie）。外加 code 一次性、me 无 cookie 401。</p>
+ * /api/sso/me（凭 cookie）。外加 code 一次性、me 无 cookie 401。</p>
  *
  * <p>code 60s 过期由 {@code RedisAuthorizationCodeStoreAdapterTest} 覆盖（避免真等 60s）。</p>
  */
@@ -74,8 +74,8 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
         assertThat(queryParam(auth1, "state")).isEqualTo(STATE);
         assertThat(queryParam(auth1, "nonce")).isEqualTo(NONCE);
 
-        // 2. /api/auth/login 密码登录（JSON）→ Set-Cookie(SSO) + 200 {redirectUrl: redirect_uri?code&state}（#26）
-        MvcResult login = mvc.perform(post("/api/auth/login")
+        // 2. /api/sso/login 密码登录（JSON）→ Set-Cookie(SSO) + 200 {redirectUrl: redirect_uri?code&state}（#26）
+        MvcResult login = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody()))
             .andExpect(status().isOk())
@@ -117,8 +117,8 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
             .andReturn();
         assertThat(queryParam(auth2, "code")).isNotEqualTo(code1);
 
-        // 5. /api/account/me 凭 SSO cookie → 200，返回当前用户
-        mvc.perform(get("/api/account/me").cookie(ssoCookieHolder[0]))
+        // 5. /api/sso/me 凭 SSO cookie → 200，返回当前用户
+        mvc.perform(get("/api/sso/me").cookie(ssoCookieHolder[0]))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.phone").value(PHONE));
     }
@@ -146,7 +146,7 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
         assertThat(queryParam(auth1, "scope")).isEqualTo(scope);
 
         // 2. 首次登录带 scope（JSON 成功 200 {redirectUrl}，#26）→ code 换 token：access_token 绑请求 scope、id_token 出 email/phone 声明
-        MvcResult login = mvc.perform(post("/api/auth/login")
+        MvcResult login = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"" + STATE + "\",\"nonce\":\"" + NONCE + "\",\"scope\":\"" + scope + "\","
@@ -198,7 +198,7 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
     @Test
     void given_consumed_code_when_token_again_then_invalid_grant() throws Exception {
         createAccount();
-        MvcResult login = mvc.perform(post("/api/auth/login")
+        MvcResult login = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody()))
             .andExpect(status().isOk()).andReturn();
@@ -222,7 +222,7 @@ class SsoFlowIntegrationTest extends SsoIntegrationTestBase {
 
     @Test
     void given_no_sso_cookie_when_access_me_then_401() throws Exception {
-        mvc.perform(get("/api/account/me"))
+        mvc.perform(get("/api/sso/me"))
             .andExpect(status().isUnauthorized());
     }
 }

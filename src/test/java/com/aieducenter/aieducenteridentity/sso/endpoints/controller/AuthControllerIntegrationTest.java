@@ -16,7 +16,7 @@ import com.aieducenter.aieducenteridentity.sso.endpoints.SsoIntegrationTestBase;
 import com.jayway.jsonpath.JsonPath;
 
 /**
- * {@code POST /api/auth/login} HTTP 黑盒集成测试（issue #15、#26 AC）。
+ * {@code POST /api/sso/login} HTTP 黑盒集成测试（issue #15、#26 AC）。
  *
  * <p>覆盖：JSON 登录成功（Set-Cookie + 200 {redirectUrl} 带 code&state）、错密码 401、
  * 未知账号同 401（防枚举）、停用账号 401；form 变体成功保持 302 + Location。</p>
@@ -38,7 +38,7 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
         createPhoneAccount(phone, PASSWORD);
 
         // JSON 变体成功 = 200 + {redirectUrl}（issue #26，SPA fetch 读体后自行顶层导航；不带 Location）
-        MvcResult result = mvc.perform(post("/api/auth/login")
+        MvcResult result = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody(phone, PASSWORD)))
             .andExpect(status().isOk())
@@ -63,13 +63,13 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
         String phone = "13900111002";
         createPhoneAccount(phone, PASSWORD);
 
-        MvcResult wrong = mvc.perform(post("/api/auth/login")
+        MvcResult wrong = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody(phone, PASSWORD + "x")))
             .andExpect(status().isUnauthorized())
             .andReturn();
 
-        MvcResult unknown = mvc.perform(post("/api/auth/login")
+        MvcResult unknown = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody("13999999999", PASSWORD)))
             .andExpect(status().isUnauthorized())
@@ -92,7 +92,7 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
         account.disable();
         accountRepository.save(account);
 
-        mvc.perform(post("/api/auth/login")
+        mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody(phone, PASSWORD)))
             .andExpect(status().isUnauthorized())
@@ -106,7 +106,7 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
 
         // identity-web 原生 form 顶层提交（issue #23）——form 变体成功保持 302 + cookie + code&state
         // （JSON 变体成功为 200 {redirectUrl}，issue #26）
-        MvcResult result = mvc.perform(post("/api/auth/login")
+        MvcResult result = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)
                 .param("redirectUri", REDIRECT_URI)
@@ -130,7 +130,7 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
         String phone = "13900111005";
         createPhoneAccount(phone, PASSWORD);
 
-        mvc.perform(post("/api/auth/login")
+        mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)
                 .param("redirectUri", REDIRECT_URI)
@@ -142,7 +142,7 @@ class AuthControllerIntegrationTest extends SsoIntegrationTestBase {
 
     @Test
     void given_invalid_client_when_login_via_form_then_error_without_redirect() throws Exception {
-        MvcResult result = mvc.perform(post("/api/auth/login")
+        MvcResult result = mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", "ghost")
                 .param("redirectUri", REDIRECT_URI)

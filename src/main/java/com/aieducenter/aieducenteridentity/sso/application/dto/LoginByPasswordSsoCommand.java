@@ -3,7 +3,7 @@ package com.aieducenter.aieducenteridentity.sso.application.dto;
 import jakarta.validation.constraints.NotBlank;
 
 /**
- * /api/auth/login 密码登录命令（CONTEXT 登录契约 / issue #15）。
+ * /api/sso/login 密码登录命令（CONTEXT 登录契约 / issue #15）。
  *
  * <p>identity-web 登录页提交：authorize 上下文（client/redirect/state/nonce/scope）+ 凭据（account/password）。
  * 不含图形验证码字段（dev 跳过；后端按 client 配置后续再加）。</p>

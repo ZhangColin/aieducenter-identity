@@ -29,9 +29,9 @@ class CaptchaFlowIntegrationTest extends IdentityIntegrationTestBase {
             + "\"captchaId\":\"" + captchaId + "\",\"captchaCode\":\"" + captchaCode + "\"}";
     }
 
-    /** GET /api/captcha，返回 {id, 从 Redis 读出的真码}。 */
+    /** GET /api/sso/captcha，返回 {id, 从 Redis 读出的真码}。 */
     private CaptchaInfo createCaptcha() throws Exception {
-        var result = mvc.perform(get("/api/captcha"))
+        var result = mvc.perform(get("/api/sso/captcha"))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.image").isNotEmpty())
             .andExpect(jsonPath("$.data.captchaId").isNotEmpty())
@@ -59,7 +59,7 @@ class CaptchaFlowIntegrationTest extends IdentityIntegrationTestBase {
         CaptchaInfo captcha = createCaptcha();
 
         // when & then — 正确图形码 → 发短信成功
-        mvc.perform(post("/api/account/verification-code/sms")
+        mvc.perform(post("/api/sso/verification-code/sms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(smsBody(captcha.id(), captcha.code())))
             .andExpect(ApiTestAssertions.assertOk());
@@ -71,7 +71,7 @@ class CaptchaFlowIntegrationTest extends IdentityIntegrationTestBase {
         CaptchaInfo captcha = createCaptcha();
 
         // when & then — 错图形码 → CAPTCHA_INVALID 400
-        mvc.perform(post("/api/account/verification-code/sms")
+        mvc.perform(post("/api/sso/verification-code/sms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(smsBody(captcha.id(), "WRONG")))
             .andExpect(status().isBadRequest())
@@ -82,13 +82,13 @@ class CaptchaFlowIntegrationTest extends IdentityIntegrationTestBase {
     void given_reused_captcha_when_send_sms_then_400() throws Exception {
         // given — 第一次用掉 captcha（校验即删除）
         CaptchaInfo captcha = createCaptcha();
-        mvc.perform(post("/api/account/verification-code/sms")
+        mvc.perform(post("/api/sso/verification-code/sms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(smsBody(captcha.id(), captcha.code())))
             .andExpect(ApiTestAssertions.assertOk());
 
         // when & then — 同一 captcha 二次使用 → 已删除 → 400（一次性）
-        mvc.perform(post("/api/account/verification-code/sms")
+        mvc.perform(post("/api/sso/verification-code/sms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(smsBody(captcha.id(), captcha.code())))
             .andExpect(status().isBadRequest())

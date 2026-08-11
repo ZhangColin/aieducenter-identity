@@ -9,7 +9,7 @@ import com.cartisan.core.stereotype.PortType;
  * 授权码存储端口（南向，对一次性授权码的签发与消费能力的抽象）。
  *
  * <p>code 一次性 + 60s + 绑 client/redirect_uri（CONTEXT 安全集）：{@link #issue} 存入短命 code，
- * {@link #consume} 原子取删——同一 code 再消费返回 empty（防重放）。{@code /authorize} 与 {@code /api/auth/login}
+ * {@link #consume} 原子取删——同一 code 再消费返回 empty（防重放）。{@code /authorize} 与 {@code /api/sso/login}
  * 发 code、{@code /token} 换 code 走本端口。</p>
  *
  * @since 0.1.0

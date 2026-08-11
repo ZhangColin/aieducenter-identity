@@ -28,7 +28,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
- * 认证入口（{@code /api/auth/*}）——建 SSO 会话 + 发 code（CONTEXT 接口命名空间 / issue #15、#18、#26）。
+ * 认证入口（{@code /api/sso/*}）——建 SSO 会话 + 发 code（CONTEXT 接口命名空间 / issue #15、#18、#26、#55）。
  *
  * <p>密码登录：验凭据 → 建 SSO 会话 + 种 cookie → 发 code → 回 {@code redirect_uri?code&state}。
  * 密码注册：唯一性校验 → 建号 → 注册即登录（同一后半段：建会话 + 种 cookie + 发 code）。
@@ -39,7 +39,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * {@code 302 + Location}（浏览器原生顶层提交自然跟随，issue #23）。两种变体同一 service、同一契约字段。</p>
  */
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/sso")
 @Tag(name = "SSO / Auth", description = "认证入口（建会话发 code）")
 public class AuthController {
 

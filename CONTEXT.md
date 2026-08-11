@@ -9,13 +9,14 @@
 - **放弃 sa-token / cartisan-security 鉴权** — 见 [ADR-0004](docs/adr/0004-drop-satoken-single-sso-session.md)。cartisan-security 的甜区是「企业后台前端持 token 调自己后端」；identity 是 **IdP 不是消费应用**——三类接口（公开 / SSO 会话 / 机机签名 / OIDC 协议）没一类需要 sa-token 的 token-match 鉴权。原 [ADR-0003](docs/adr/0003-sso-satoken-self-built-oidc.md)「会话引擎继续 Sa-Token」被修订。
 - **一套 SSO 会话**：identity 唯一用户会话 = IdP SSO 会话（cookie + Redis + 双超时）。不再有「access JWT 兼 Sa-Token 会话 token」那套。
 - **token 是 OIDC 产物，归 `/token` 端点**：access/id/refresh 签给消费方 BFF，浏览器永不接触（BFF 模式）。login/register 不签 token 返回，只建会话发 code。
-- **限界上下文只经 AppService 交往**（[ADR-0007](docs/adr/0007-cross-context-via-appservice.md)）：上下文之间只走应用层；sso→account 直接注入 account AppService，account→sso 逆流走 port 断环。token 三件套归属 sso、account 应用层=平台用户一体化缝（[ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md)，落实 ADR-0004 决策3）。
+- **限界上下文只经 AppService 交往**（[ADR-0007](docs/adr/0007-cross-context-via-appservice.md)）：上下文之间只走应用层；sso→account 直接注入 account AppService，account→sso 逆流走 port 断环。token 三件套归属 sso、account 应用层=平台用户一体化缝（[ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md)，落实 ADR-0004 决策3）。**适用边界**：ADR-0007 约束的是**跨 bc**（必须走被调方 AppService）；**同 bc 内多个 controller 共用本 bc AppService** 不受限（如 account 的签名 controller 与 sso 浏览器闭环 controller 都可跨 bc 调 AccountAppService）。
+- **对外签名服务 API 独立一层（2026-08-12）** — account + verification 各自在 bc 下开 `@RequireSignature` 签名端点（`/api/account/*` `/api/verification-codes/*` `/api/captchas/*`），与 sso 浏览器闭环（`/api/sso/*`）、OIDC 协议端点（根）三层物理分明。签名即准信、不约束消费方用法（admin bff = 业务应用一视同仁）；不是特殊的"非 SSO 应用接入"。登录只回 `SubjectView`、不发 token。见 [ADR-0009](docs/adr/0009-signed-service-api-per-bc.md)。
 
 ## 继承的稳定不变式（平台已定，本项目遵守）
 
 - Operator 不在本服务（运营认证 + 角色在统一后台 admin）。
 - SSO 对外走 OIDC（`/authorize` `/token` `/userinfo` `/jwks` `/discovery` `/logout`）；**token 只存消费方服务端，浏览器不接触 token**（BFF 模式）。
-- 应用不持有用户凭据；社交登录归本域统一接入、归一到中央 Account。
+- 应用不持有用户凭据（**scope = SSO 浏览器链路**：终端用户密码只在 identity-web 表单提交、应用前端/BFF 不经手明文密码；**不约束签名服务调用**——签名调用方传 password 验密是正常服务参数，见下方「签名服务 API」）；社交登录归本域统一接入、归一到中央 Account。
 - `tenantId` 全程可空（C 端无感，无租户按 userId 隔离）；写侧需自带租户过滤。
 - **应用管理/登记不在本服务**——identity 消费 app-registry 的 SsoClient，不自建 client 表。
 - 管组织治理角色（owner/admin/member）；应用内业务角色归应用自管。
@@ -25,7 +26,7 @@
 
 ### IdP SSO 会话（SSO cookie）—— 本服务唯一用户会话
 浏览器侧 SSO cookie（`httpOnly` + `Secure` + `SameSite-Lax`），**不透明 sessionId**（不是 token）。Redis 存 `sessionId → {userId, 创建时间, 最后活跃时间}`，**闲置 30 天 / 绝对 90 天**（可配）。
-- 消费者：`/authorize` 判免登（有 cookie 直接发 code）；identity-web 凭它调 me/profile/改密/登出。
+- 消费者：`/authorize` 判免登（有 cookie 直接发 code）；identity-web 现凭 SSO cookie 调 register/login/login-code/client-info + 发码/captcha（**me / profile / 改密 / 重置 后端端点已就绪、identity-web 前端尚未接**，见个人中心 issue）。
 - 登录/注册/社交成功时种 cookie（identity 后端，物理含统一登录 BFF）。
 - 区别于 access/id/refresh token（OIDC 产物，给消费方 BFF，不进会话）。
 
@@ -35,23 +36,43 @@
 - **refresh_token**：opaque 串，Redis 存，**一次性轮换**，**绑 SSO 会话**（会话过期即失效）。
 - 签发在 `/token`（code 换 token）；浏览器永不接触。
 
-### 接口命名空间
-| 命名空间 | 干什么 | 谁调 |
-|---|---|---|
-| `/api/auth/*` | 认证入口：login / login-code / register——都建 SSO 会话 + 发 code；client-info（公开，登录页查应用名） | identity-web（浏览器） |
-| `/api/account/*` | 账号管理：me / profile / change-password / reset-password | SSO 会话内 / 机机 |
-| OIDC 根 | /authorize /token /userinfo /jwks /discovery /logout | 按协议 |
+### 接口命名空间（按限界上下文分三层）
 
-### 登录契约（/authorize 状态机 + /api/auth/login）
+迁移后三层物理分明——OIDC 协议端点（规范钉死根路径，不动）/ sso bc 浏览器闭环（cookie + public，identity-web 用）/ account + verification bc 的签名服务（`@RequireSignature`，任何签名调用方）。**签名即准信**——调用方拿去做什么场景（给它自己的 UI 做登录/个人中心、做后台管理），不是本服务操心的；admin bff、业务应用、任何登记应用一视同仁。
+
+| 层 / namespace | 鉴权 | 内容 | 谁调 |
+|---|---|---|---|
+| **OIDC 协议端点**（根；代码在 sso 包） | 协议各自（code / client_secret / bearer） | `/authorize` `/token` `/userinfo` `/jwks` `/.well-known/openid-configuration` `/logout` | OIDC 客户端 = SSO 消费方 BFF |
+| **sso bc · 浏览器闭环** `/api/sso/*` | SSO cookie 或 public | login / login-code / register（都建 SSO 会话 + 发 code）/ client-info（公开）；me / profile / 改密 / 重置；captcha / verification-code | identity-web（浏览器） |
+| **account bc · 签名服务** `/api/account/*` | `@RequireSignature` | authenticate / authenticate-by-code / register / reset-password / find / `{userId}` / `{userId}/profile` / `{userId}/change-password` | 任何签名调用方 |
+| **verification bc · 签名服务** | `@RequireSignature` | `/api/verification-codes`（发码）/ `/api/verification-codes/verify`（验码）/ `/api/captchas`（图形码） | 任何签名调用方 |
+
+> 迁移把 cookie/public 端点从 `/api/auth/*`、`/api/account/*`（旧 cookie 版）、`/api/captcha`、`/api/account/verification-code/*` 收拢到 `/api/sso/*`，**腾空 `/api/account/*` 给 account bc 的签名服务**；`VerificationCodeController` 原 path 寄生在 `/api/account`（包却在 verification bc）的历史错位一并修正。controller 归属按"调用方闭环"：SSO 浏览器闭环的 controller（cookie/public 鉴权）归 sso endpoints（即便操作 account/verification 数据，跨 bc 调对应 AppService）；签名服务 controller 归各自 bc。
+
+### 签名服务 API（account + verification bc 对外暴露）
+
+普通服务视角：identity 把 account + verification 的能力以**签名服务**方式对外暴露，**不是一个特殊的"非 SSO 应用接入"**。任何登记并持 apiKey/apiSecret 的调用方（admin bff、业务应用、SSO 应用做管理操作）签名后即可调，与调用方场景无关。
+
+- **鉴权**：`@RequireSignature`（cartisan-openapi），框架 `RemoteApiKeyProvider` 调 `GET /api/app-registry/api-keys/{apiKey}` 解析调用方、Caffeine 30min 缓存；identity 的 `cartisan.openapi.apikey-service-url` 已配（#46），**零新基建**，对齐 payment/wechat 先例。调用方从 `RequestContext.getCallerAppName()` 取。
+- **登录的产物 = `SubjectView`**（userId/email/phone/nickname/avatar/status），**不发 token**、不建 identity 侧会话。"登录态 / 登出 / session" 是调用方自己的概念，本服务不持有——故跨应用登出 / 会话一致性不在本服务职责内（调用方自管）。
+- **凭据 scope**：签名调用方传 password 验密、传 code 验码，是正常服务参数，不受"应用不持有用户凭据"不变式约束（该不变式 scope = SSO 浏览器链路）。
+- **操作分组**：按"要不要预知 userId"分——`authenticate` / `authenticate-by-code` / `register` / `reset-password` 按 `identifier`（应用持 email/phone 即可办）；`GET {userId}` / `PUT {userId}/profile` / `{userId}/change-password` 按 userId（应用已知用户）。
+- **verification 作为服务**：发码 / 验码 / 图形码都开签名端点；不强制图形码（调用方自决）、不绑操作（裸验码也开，应用想先验后操作可以）；防轰炸靠限流（per apiKey + per target），防用户枚举不搬 SSO 浏览器链路那套（签名调用方可信，验码老实回 valid）。
+- **错误响应**：标准 cartisan-web `ApiResponse` + 错误码 JSON，不复用 OIDC 的 `{error, error_description}`（那是 OIDC 协议端点的）。
+- **per-app 操作权限**：本期"签名即准信 + 操作白名单"起步（默认签名应用可调全白名单、危险操作不暴露）；细粒度 per-app 权限推后整体设计。
+
+**SSO 接入应用消费用户信息**：SSO 应用 = **OIDC 消费方 + 签名调用方双身份**——读**当前登录用户**基本信息走 `/userinfo`（OIDC 标准，BFF 持 access_token，scope 控制字段）；改 profile / 改密 / 读他人 / 批量管理走签名 `/api/account/*`（用其 apiKey）。非 SSO（纯签名）应用只有后者、无 token 概念。
+
+### 登录契约（/authorize 状态机 + /api/sso/login）
 ```
 GET /authorize：验 client_id/redirect_uri/state → 看 SSO cookie
   有 cookie → 发 code, 302 回 redirect_uri?code&state          ← 二次 SSO
   无 cookie → 302 到登录页(透传 authorize 参数)
-POST /api/auth/login {client_id, redirect_uri, state, nonce, scope, account, password}
+POST /api/sso/login {client_id, redirect_uri, state, nonce, scope, account, password}
   → 验凭据 → 建 SSO 会话 + 种 cookie → 发 code → 回 redirect_uri?code&state
-POST /api/auth/login-code {同 authorize 透传 + account + code}
+POST /api/sso/login-code {同 authorize 透传 + account + code}
   → 验验证码(purpose=LOGIN) → 定位账号 → 建 SSO 会话 + 种 cookie → 发 code → 同上
-POST /api/auth/register {同 authorize 透传 + email/phone + emailCode/phoneCode + password?}
+POST /api/sso/register {同 authorize 透传 + email/phone + emailCode/phoneCode + password?}
   → 唯一性校验 → 当场验码(purpose=REGISTER) → 建号 → 注册即登录（同 login 后半段）
 ```
 发 code 各处共用一个方法（login/register/login-code 经 SsoLoginCompletionAppService 统一后半段）；不引入 ticket/interactionId（最简方案）。scope 全链路透传（登录页 URL → login/login-code/register → 发码绑 code，#25）——首次登录与二次免登同参时 token scope/声明一致。
@@ -59,7 +80,7 @@ login/login-code/register 同时吃 **JSON 与 form-urlencoded**，**成功响�
 - **JSON 变体 = `200 {redirectUrl}`**——identity-web 登录/注册页是前后端分离 SPA：fetch POST JSON（同源，经 Next rewrite 代理），成功读体后 `window.location.href` 顶层导航回业务应用。不能回 302：fetch 会自动跟随、跨域跟随被 CORS 拦死（`redirect:'manual'` 也只拿到读不出 Location 的 opaqueredirect）。
 - **form 变体 = `302 + Location`**——浏览器原生 form 顶层提交自然跟随（#23，无 JS 兜底保留）。
 两变体同一 service、同一契约字段（camelCase：`clientId`/`redirectUri`/`state`/`nonce`/`scope`；form 只是编码差异，不是新契约——区别于 /authorize URL 参数的 snake_case）；Set-Cookie 种 SSO 会话两变体一致；失败响应（401/409/CODE_INVALID/400 `{error,error_description}`）两变体一致、不随提交方式变化。SSO 跨站链路不变式保持「跨站最后一跳 = 浏览器顶层导航、零跨域 fetch」（fetch 仅同源）。
-验证码复用 verification 上下文：**purpose 分键**（REGISTER/LOGIN/RESET_PASSWORD，Redis key = 联络方式:用途），注册码与登录码互不串用；发码走 `/api/account/verification-code/*` 公开端点带 purpose。login-code **防用户枚举**：「账号不存在」与「验证码错误」同一响应（错码由 verification 抛 CODE_INVALID；验码通过但账号不存在补抛同一 CODE_INVALID），停用/锁定在验码通过后才告知。
+验证码复用 verification 上下文：**purpose 分键**（REGISTER/LOGIN/RESET_PASSWORD，Redis key = 联络方式:用途），注册码与登录码互不串用；发码走 `/api/sso/verification-code/*` 公开端点带 purpose。login-code **防用户枚举**：「账号不存在」与「验证码错误」同一响应（错码由 verification 抛 CODE_INVALID；验码通过但账号不存在补抛同一 CODE_INVALID），停用/锁定在验码通过后才告知。
 
 ### Account（账号 / 终端用户）
 平台一个终端用户。一张 `account` 表：`userId`（主键 TSID，作 SSO `sub`，换邮箱/手机不变）；登录定位字段 `email`/`phone`（唯一、可空）+ `password_hash`（可空）；状态字段。
@@ -98,13 +119,13 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - 开放注册；**至少一联络方式**(email/phone 至少其一)**当场发码验证、验过才建号**（填了哪个联络方式就验哪个的码，未验的不落库——防占用他人联络方式）；**密码可选**（设了密码登，没设走 login-code 验证码登）。
 - **注册即登录**：建号 → 建 SSO 会话 → 发 code（同登录后半段，不再单独登一次）。
 - 仅社交可直接建号 + 引导补联络方式（不阻断）。
-- 落地分期：**密码注册（#18）+ 当场验码/密码可选/验证码登录（#22）均已落地**（`/api/auth/register` + `/api/auth/login-code`；「至少一联络方式」与格式校验收在 `Account.register` 聚合不变量）。**#28 拍板（2026-08-02）：前端这期接验证码 UI**——identity-web Phase 1「无码注册」拍板推翻（#5 返工），email/phone 注册登录 + 图形码一次做全；dev 联调靠固定码，**不做缺码放行**，契约保持「码永远必填」。注册页密码字段 UI 这期**必填**（后端契约仍支持可选，「纯验证码登录用户」形态等有需求再放开）。
+- 落地分期：**密码注册（#18）+ 当场验码/密码可选/验证码登录（#22）均已落地**（`/api/sso/register` + `/api/sso/login-code`；「至少一联络方式」与格式校验收在 `Account.register` 聚合不变量）。**#28 拍板（2026-08-02）：前端这期接验证码 UI**——identity-web Phase 1「无码注册」拍板推翻（#5 返工），email/phone 注册登录 + 图形码一次做全；dev 联调靠固定码，**不做缺码放行**，契约保持「码永远必填」。注册页密码字段 UI 这期**必填**（后端契约仍支持可选，「纯验证码登录用户」形态等有需求再放开）。
 
 ### 社交登录（微信扫码首批）
 **两层 OAuth**：identity 对业务应用 = IdP，对微信 = 客户端。
 ```
 点"微信登录" → identity 把 OIDC 上下文存 Redis(绑 ticket,微信 state=ticket) → 跳微信扫码
-微信回调 /api/auth/social/wechat/callback?code&state=ticket → 凭 ticket 取回 OIDC 上下文
+微信回调 /api/sso/social/wechat/callback?code&state=ticket → 凭 ticket 取回 OIDC 上下文
 → 微信 code 换 unionid → 查 external_identities(wechat, unionid):
      命中 → 该 userId
      未命中 → 建新 Account + 写 external_identities(引导补联络方式, 不阻断)
@@ -200,10 +221,11 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - [ADR-0006](docs/adr/0006-error-response-split-by-caller.md) 端点错误响应按调用方分流（浏览器类跳 identity-web 兜底页 / 机机类 RFC6749 JSON）
 - [ADR-0007](docs/adr/0007-cross-context-via-appservice.md) 跨上下文调用只走被调方 AppService（服务级 DDD 原则）
 - [ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md) token 三件套归属 sso + account 应用层=平台用户一体化缝
+- [ADR-0009](docs/adr/0009-signed-service-api-per-bc.md) 对外签名服务 API 独立一层（按 bc 暴露、签名即准信、登录只回 SubjectView）
 
 ## 构建分期（重排；旧 issue #5 等及 token-in-login 设计废弃）
 
-- **Phase 1（SSO 会话基建 + 登录闭环）**：SSO 会话（cookie + Redis + 双超时）+ `/authorize` + 登录契约（`/api/auth/login`）+ 接口命名空间重组 + demo 消费方 + dev 环境。
+- **Phase 1（SSO 会话基建 + 登录闭环）**：SSO 会话（cookie + Redis + 双超时）+ `/authorize` + 登录契约（`/api/sso/login`）+ 接口命名空间重组 + demo 消费方 + dev 环境。
 - **Phase 2（OIDC 协议端点）**：`/token` + `/userinfo` + `/jwks` + `/discovery`。
 - **Phase 3（注册 + 社交）**：注册流 + 微信扫码（PC）。
 - **Phase 4（登出）**：RP-initiated logout + 准 SLO + 改密/封号踢人。
@@ -213,7 +235,7 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 
 - [x] sa-token 去留 = **弃**（ADR-0004）
 - [x] SSO 会话 = **一套 cookie 会话**；token 归 `/token`
-- [x] 登录契约 = `/authorize` 状态机 + `/api/auth/login` 最简（无 ticket）
+- [x] 登录契约 = `/authorize` 状态机 + `/api/sso/login` 最简（无 ticket）
 - [x] 注册 = 开放 + 至少一联络方式当场验证 + 密码可选 + 注册即登录
 - [x] 社交 = 两层 OAuth + unionid 归一 + 本期只 PC 扫码
 - [x] 登出 = 准 SLO（≤15min）+ RP-initiated；完整 back-channel SLO 排后
@@ -226,6 +248,13 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - [x] 应用管理/登记 = 不在本服务，消费 app-registry
 - [x] #28 契约冲突 = 前端接码 UI（c-revised：email/phone 注册登录 + 图形码一次做全）+ dev 固定码配套；不做缺码放行
 - [x] 验证码通道 = 分期：接口先行 + Log 占位 + dev 固定码（生成处固定、prod 拒启）
+- [x] 对外签名服务 API（2026-08-12）= account + verification bc 各自暴露 `@RequireSignature` 签名端点；签名即准信、不约束消费方；登录只回 `SubjectView` 不发 token；与 admin bff 一视同仁；namespace 三层（OIDC 根 / `/api/sso/*` 浏览器 / 签名服务按 bc）
+- [x] SSO 应用消费用户信息 = 读走 `/userinfo`、写走签名 `/api/account/*`（双身份：OIDC 消费方 + 签名调用方）
+- [x] 不变式"应用不持有凭据" scope = SSO 浏览器链路（不约束签名服务调用）
+- [ ] namespace 迁移 cookie/public → `/api/sso/*`（#55）
+- [ ] 签名服务 API 落地（#56，前置 #55）
+- [ ] identity-web 个人中心 me/profile/改密（后端就绪、前端未接，#57）
+- [ ] per-app 操作权限细化（推后整体设计）
 - [ ] 真实短信/邮件网关接入（计费/签名报备；邮件可配 mailpit 类假收件箱联调）— 独立排期
 - [ ] 行为验证码（滑块类 SaaS）— 随真实短信通道一起评估
 - [ ] MFA — 本期不做（除非未来特别需求）

@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
- * client-info 公开查询端点——{@code GET /api/auth/client-info?client_id=}（issue #24）。
+ * client-info 公开查询端点——{@code GET /api/sso/client-info?client_id=}（issue #24、#55）。
  *
  * <p>登录页从 /authorize 透传只拿到 client_id，凭本端点查应用名显示「登录到 XXX 应用」。
  * <b>公开端点</b>（未登录可访问，不在 identity.sso.protected-paths 内，SsoSessionFilter 放行）；
@@ -20,7 +20,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * client_id 缺失/无效/停用 → 400 unauthorized_client（与 /authorize 重定向前错同一形态，不重定向）。</p>
  */
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/sso")
 @Tag(name = "SSO / Auth", description = "认证入口（建会话发 code）")
 public class ClientInfoController {
 

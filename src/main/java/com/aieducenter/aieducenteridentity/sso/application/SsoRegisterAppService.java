@@ -16,7 +16,7 @@ import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.Verif
 import com.cartisan.core.exception.DomainException;
 
 /**
- * /api/auth/register 注册（CONTEXT 注册 / issue #18、#22）。
+ * /api/sso/register 注册（CONTEXT 注册 / issue #18、#22）。
  *
  * <p>校验 client/redirect_uri → 当场验码（提供的联络方式各验各的码，purpose=REGISTER，<b>验不过不建号</b>）→
  * 建号（经 {@link AccountAuthAppService#register}：唯一性 + 密码可选 encode + {@code Account.register} +

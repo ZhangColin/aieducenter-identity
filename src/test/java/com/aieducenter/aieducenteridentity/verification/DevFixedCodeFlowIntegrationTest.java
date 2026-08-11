@@ -39,9 +39,9 @@ class DevFixedCodeFlowIntegrationTest extends SsoIntegrationTestBase {
     private static final String PHONE = "13800138001";
     private static final String PASSWORD = "Password123";
 
-    /** GET /api/captcha 取 captchaId，并断言 Redis 落地真值 = 固定图形码。 */
+    /** GET /api/sso/captcha 取 captchaId，并断言 Redis 落地真值 = 固定图形码。 */
     private String createCaptchaAndAssertFixed() throws Exception {
-        MvcResult result = mvc.perform(get("/api/captcha"))
+        MvcResult result = mvc.perform(get("/api/sso/captcha"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.image").isNotEmpty())
             .andReturn();
@@ -51,7 +51,7 @@ class DevFixedCodeFlowIntegrationTest extends SsoIntegrationTestBase {
     }
 
     private void sendSms(String captchaId, String captchaCode, int expectedStatus) throws Exception {
-        mvc.perform(post("/api/account/verification-code/sms")
+        mvc.perform(post("/api/sso/verification-code/sms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"phone\":\"" + PHONE + "\",\"purpose\":\"REGISTER\","
                     + "\"captchaId\":\"" + captchaId + "\",\"captchaCode\":\"" + captchaCode + "\"}"))
@@ -88,7 +88,7 @@ class DevFixedCodeFlowIntegrationTest extends SsoIntegrationTestBase {
         assertThat(registerCode).isEqualTo(DEV_CODE);
 
         // 注册（email + 固定码 + 密码）→ 建号建会话，200 {redirectUrl}
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"st\",\"nonce\":\"non\","
@@ -101,14 +101,14 @@ class DevFixedCodeFlowIntegrationTest extends SsoIntegrationTestBase {
         // 发登录码 → login-code 填 246810 → 200
         String loginCode = sendEmailCode(EMAIL, "LOGIN");
         assertThat(loginCode).isEqualTo(DEV_CODE);
-        mvc.perform(post("/api/auth/login-code")
+        mvc.perform(post("/api/sso/login-code")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginCodeBody(DEV_CODE)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.redirectUrl", org.hamcrest.Matchers.startsWith(REDIRECT_URI + "?")));
 
         // 同一联络方式同 purpose，246810 用第二次 → 400（一次性消费仍真）
-        mvc.perform(post("/api/auth/login-code")
+        mvc.perform(post("/api/sso/login-code")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginCodeBody(DEV_CODE)))
             .andExpect(status().isBadRequest());
@@ -122,7 +122,7 @@ class DevFixedCodeFlowIntegrationTest extends SsoIntegrationTestBase {
         sendEmailCode(EMAIL, "REGISTER");
 
         // when & then — 60s 冷却期内同邮箱同 purpose 重发 → 429（限流不被固定码绕过）
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + EMAIL + "\",\"purpose\":\"REGISTER\"}"))
             .andExpect(status().isTooManyRequests());

@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.verification.endpoints.controller;
+package com.aieducenter.aieducenteridentity.sso.endpoints.controller;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -14,8 +14,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.aieducenter.aieducenteridentity.verification.application.CaptchaAppService;
 import com.aieducenter.aieducenteridentity.verification.application.dto.CreateCaptchaResponse;
 
-@WebMvcTest(controllers = CaptchaController.class)
-class CaptchaControllerTest {
+/**
+ * {@link SsoCaptchaController} 切片测试——{@code GET /api/sso/captcha}（issue #55 迁 namespace）。
+ */
+@WebMvcTest(controllers = SsoCaptchaController.class)
+class SsoCaptchaControllerTest {
 
     @Autowired
     private MockMvc mvc;
@@ -32,7 +35,7 @@ class CaptchaControllerTest {
             .thenReturn(new CreateCaptchaResponse(expectedImage, expectedId));
 
         // When/Then - Controller显式返回ApiResponse
-        mvc.perform(get("/api/captcha"))
+        mvc.perform(get("/api/sso/captcha"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.image").value(expectedImage))
             .andExpect(jsonPath("$.data.captchaId").value(expectedId));

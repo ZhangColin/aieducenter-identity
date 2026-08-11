@@ -3,8 +3,8 @@ package com.aieducenter.aieducenteridentity.sso.domain.error;
 import com.cartisan.core.exception.CodeMessage;
 
 /**
- * SSO 认证类错误码——{@code DomainException} 形态，给 {@code /api/auth/register}、
- * {@code /api/auth/login-code} 等「内部 {@code ApiResponse}」响应用。
+ * SSO 认证类错误码——{@code DomainException} 形态，给 {@code /api/sso/register}、
+ * {@code /api/sso/login-code} 等「内部 {@code ApiResponse}」响应用。
  *
  * <p>区别于同包 {@link SsoError}：后者是 OIDC 标准 {@code {error, error_description}} 语料
  * （给 {@code /authorize}、{@code /token}、{@code /userinfo}，由 {@link OidcExceptionHandler} 转响应）。

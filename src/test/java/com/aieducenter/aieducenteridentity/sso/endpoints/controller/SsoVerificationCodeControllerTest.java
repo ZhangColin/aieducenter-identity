@@ -1,4 +1,4 @@
-package com.aieducenter.aieducenteridentity.verification.endpoints.controller;
+package com.aieducenter.aieducenteridentity.sso.endpoints.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -19,8 +19,11 @@ import com.aieducenter.aieducenteridentity.verification.application.Verification
 import com.aieducenter.aieducenteridentity.verification.application.dto.SendCodeResponse;
 import com.aieducenter.aieducenteridentity.verification.application.dto.VerifyCodeResult;
 
-@WebMvcTest(controllers = VerificationCodeController.class)
-class VerificationCodeControllerTest {
+/**
+ * {@link SsoVerificationCodeController} 切片测试——{@code /api/sso/verification-code/*}（issue #55 迁 namespace）。
+ */
+@WebMvcTest(controllers = SsoVerificationCodeController.class)
+class SsoVerificationCodeControllerTest {
 
     @Autowired
     private MockMvc mvc;
@@ -35,7 +38,7 @@ class VerificationCodeControllerTest {
             .thenReturn(new SendCodeResponse(300, 60));
 
         // When & Then - Controller显式返回ApiResponse
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"test@example.com\",\"purpose\":\"REGISTER\"}"))
             .andExpect(status().isOk())
@@ -50,7 +53,7 @@ class VerificationCodeControllerTest {
             .thenReturn(new VerifyCodeResult(true, "验证码正确"));
 
         // When & Then - Controller显式返回ApiResponse
-        mvc.perform(post("/api/account/verify-code")
+        mvc.perform(post("/api/sso/verification-code/verify")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"test@example.com\",\"code\":\"123456\",\"purpose\":\"REGISTER\"}"))
             .andExpect(status().isOk())
@@ -64,7 +67,7 @@ class VerificationCodeControllerTest {
             .thenReturn(new SendCodeResponse(300, 60));
 
         // When & Then
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .with(request -> { request.setRemoteAddr("127.0.0.1"); return request; })
                 .header("X-Forwarded-For", "203.0.113.5")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -80,7 +83,7 @@ class VerificationCodeControllerTest {
         when(service.sendEmailVerificationCode(any(), eq("203.0.113.5")))
             .thenReturn(new SendCodeResponse(300, 60));
 
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .with(request -> { request.setRemoteAddr("10.0.0.1"); return request; })
                 .header("X-Forwarded-For", "203.0.113.5, 10.0.0.2")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -97,7 +100,7 @@ class VerificationCodeControllerTest {
         when(service.sendEmailVerificationCode(any(), eq(publicIp)))
             .thenReturn(new SendCodeResponse(300, 60));
 
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .with(request -> { request.setRemoteAddr(publicIp); return request; })
                 .header("X-Forwarded-For", "1.2.3.4")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -113,7 +116,7 @@ class VerificationCodeControllerTest {
         when(service.sendEmailVerificationCode(any(), eq("203.0.113.9")))
             .thenReturn(new SendCodeResponse(300, 60));
 
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .with(request -> { request.setRemoteAddr("172.16.0.1"); return request; })
                 .header("X-Forwarded-For", "203.0.113.9")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -130,7 +133,7 @@ class VerificationCodeControllerTest {
         when(service.sendEmailVerificationCode(any(), eq(ip172_32)))
             .thenReturn(new SendCodeResponse(300, 60));
 
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .with(request -> { request.setRemoteAddr(ip172_32); return request; })
                 .header("X-Forwarded-For", "9.9.9.9")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -146,7 +149,7 @@ class VerificationCodeControllerTest {
         when(service.sendEmailVerificationCode(any(), eq("192.168.1.1")))
             .thenReturn(new SendCodeResponse(300, 60));
 
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .with(request -> { request.setRemoteAddr("192.168.1.1"); return request; })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"test@example.com\",\"purpose\":\"REGISTER\"}"))

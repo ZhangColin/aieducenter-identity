@@ -59,9 +59,9 @@ identity:
     # 浏览器导航类端点（/authorize /logout）出错时 302 跳转的兜底页（ADR-0006，identity-web /error）
     error-page-url: https://identity.aieducenter.com/error
     protected-paths:
-      - /api/account/me
-      - /api/account/profile
-      - /api/account/change-password
+      - /api/sso/me
+      - /api/sso/profile
+      - /api/sso/change-password
     # app-registry bootstrap 端点（#30 消费 SsoClient facet；test 指向 WireMock、prod 走 env）
     app-registry:
       base-url: ${APP_REGISTRY_BASE_URL:http://localhost:18080}

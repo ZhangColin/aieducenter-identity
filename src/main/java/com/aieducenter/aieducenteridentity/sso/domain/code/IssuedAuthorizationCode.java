@@ -3,7 +3,7 @@ package com.aieducenter.aieducenteridentity.sso.domain.code;
 import java.util.Objects;
 
 /**
- * 已签发的授权码绑定载荷——{@code /authorize} 与 {@code /api/auth/login} 发 code 时存、{@code /token} 换 code 时取。
+ * 已签发的授权码绑定载荷——{@code /authorize} 与 {@code /api/sso/login} 发 code 时存、{@code /token} 换 code 时取。
  *
  * <p>code 本身是不透明随机串（store 生成、作 Redis key）；本记录是绑在 code 上的上下文：
  * 消费方（clientId）+ 回调（redirectUri）+ 用户（userId）+ 防重放（nonce）+ 授权范围（scope）+

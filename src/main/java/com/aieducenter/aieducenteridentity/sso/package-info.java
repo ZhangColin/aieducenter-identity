@@ -5,7 +5,9 @@
  * <ul>
  *   <li>SSO 会话（cookie + Redis + 闲置/绝对双超时）——identity 唯一用户会话</li>
  *   <li>OIDC Authorization Endpoint {@code /authorize}（状态机：有会话发 code / 无会话跳登录页）</li>
- *   <li>认证入口 {@code /api/auth/*}（密码登录：建会话 + 种 cookie + 发 code）</li>
+ *   <li>认证入口 {@code /api/sso/*}（密码登录 / 验证码登录 / 注册：建会话 + 种 cookie + 发 code）</li>
+ *   <li>SSO 浏览器闭环端点 {@code /api/sso/*}：client-info、captcha、verification-code、me / profile / 改密 / 重置
+ *       （#55 收拢；cookie / public 鉴权，identity-web 用；跨 bc 调 account / verification AppService，ADR-0007）</li>
  *   <li>OIDC Token Endpoint {@code /token}（code 换 access/id/refresh；refresh 轮换）</li>
  *   <li>OIDC /userinfo /jwks /discovery（#17）、登出/准 SLO（#19）——OIDC 闭环全在 sso</li>
  *   <li>授权码存储（一次性 60s，绑 client/redirect_uri）</li>

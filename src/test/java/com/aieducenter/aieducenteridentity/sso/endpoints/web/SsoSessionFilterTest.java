@@ -19,7 +19,7 @@ class SsoSessionFilterTest extends IdentityIntegrationTestBase {
     @Test
     void given_no_sso_cookie_when_access_protected_me_then_401_from_sso_filter() throws Exception {
         // 受保护路径无 SSO cookie → SsoSessionFilter 直接 401（带 SSO 标识消息）
-        mvc.perform(get("/api/account/me"))
+        mvc.perform(get("/api/sso/me"))
             .andExpect(status().isUnauthorized())
             .andExpect(content().string(org.hamcrest.Matchers.containsString("未登录或会话已过期")));
     }
@@ -27,7 +27,7 @@ class SsoSessionFilterTest extends IdentityIntegrationTestBase {
     @Test
     void given_no_sso_cookie_when_access_public_endpoint_then_not_blocked_by_filter() throws Exception {
         // 非受保护路径（公开验证码接口）无 cookie 也放行 → 非 401
-        MvcResult result = mvc.perform(get("/api/captcha")).andReturn();
+        MvcResult result = mvc.perform(get("/api/sso/captcha")).andReturn();
         int status = result.getResponse().getStatus();
         org.assertj.core.api.Assertions.assertThat(status).isNotEqualTo(401);
     }

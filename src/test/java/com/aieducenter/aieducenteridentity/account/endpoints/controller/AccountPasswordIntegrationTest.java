@@ -16,7 +16,7 @@ import jakarta.servlet.http.Cookie;
  * 密码管理 HTTP 黑盒集成测试——重置密码（验证码，公开）+ 修改密码（验旧密码，凭 SSO cookie）。
  *
  * <p>改密端点凭 SSO cookie 经 SSO 会话过滤器认人（issue #21：摘掉 {@code @RequireAuth}，
- * 旧 {@code /api/account/login} 链路已拆，建号/登录在测试里走 repository + {@code /api/auth/login}）。</p>
+ * 旧 {@code /api/account/login} 链路已拆，建号/登录在测试里走 repository + {@code /api/sso/login}）。</p>
  */
 @Transactional
 class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
@@ -30,9 +30,9 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
         return ssoCookie(session.sessionId());
     }
 
-    /** 新密码能登录 = SSO 密码登录 200 {redirectUrl} 发 code（唯一认证入口 /api/auth/login，#26）。 */
+    /** 新密码能登录 = SSO 密码登录 200 {redirectUrl} 发 code（唯一认证入口 /api/sso/login，#26）。 */
     private void assertPasswordLoginWorks(String account, String password) throws Exception {
-        mvc.perform(post("/api/auth/login")
+        mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"account\":\"" + account + "\",\"password\":\"" + password + "\"}"))
@@ -47,7 +47,7 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
         createPhoneAccount(phone, OLD_PASSWORD);
         String code = sendSmsCode(phone, "RESET_PASSWORD", getCaptcha());
 
-        mvc.perform(post("/api/account/reset-password")
+        mvc.perform(post("/api/sso/reset-password")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"account\":\"" + phone + "\",\"verificationCode\":\"" + code + "\","
                     + "\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
@@ -58,7 +58,7 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
 
     @Test
     void given_wrong_reset_code_when_reset_password_then_400() throws Exception {
-        mvc.perform(post("/api/account/reset-password")
+        mvc.perform(post("/api/sso/reset-password")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"account\":\"13700100002\",\"verificationCode\":\"000000\","
                     + "\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
@@ -72,7 +72,7 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
         createEmailAccount(email, OLD_PASSWORD);
 
         String resetCode = sendEmailCode(email, "RESET_PASSWORD");
-        mvc.perform(post("/api/account/reset-password")
+        mvc.perform(post("/api/sso/reset-password")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"account\":\"" + email + "\",\"verificationCode\":\"" + resetCode + "\","
                     + "\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
@@ -89,7 +89,7 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
         Long userId = createPhoneAccount(phone, OLD_PASSWORD);
         Cookie sso = ssoLoginCookie(userId, phone);
 
-        mvc.perform(post("/api/account/change-password")
+        mvc.perform(post("/api/sso/change-password")
                 .cookie(sso)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"oldPassword\":\"" + OLD_PASSWORD + "\",\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
@@ -105,7 +105,7 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
         Long userId = createPhoneAccount(phone, OLD_PASSWORD);
         Cookie sso = ssoLoginCookie(userId, phone);
 
-        mvc.perform(post("/api/account/change-password")
+        mvc.perform(post("/api/sso/change-password")
                 .cookie(sso)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"oldPassword\":\"WrongOld999\",\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
@@ -119,7 +119,7 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
         Long userId = createPhoneAccount(phone, OLD_PASSWORD);
         Cookie sso = ssoLoginCookie(userId, phone);
 
-        mvc.perform(post("/api/account/change-password")
+        mvc.perform(post("/api/sso/change-password")
                 .cookie(sso)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"oldPassword\":\"" + OLD_PASSWORD + "\",\"newPassword\":\"" + OLD_PASSWORD + "\"}"))
@@ -129,7 +129,7 @@ class AccountPasswordIntegrationTest extends AccountIntegrationTestBase {
 
     @Test
     void given_no_sso_cookie_when_change_password_then_401() throws Exception {
-        mvc.perform(post("/api/account/change-password")
+        mvc.perform(post("/api/sso/change-password")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"oldPassword\":\"x\",\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
             .andExpect(status().isUnauthorized());

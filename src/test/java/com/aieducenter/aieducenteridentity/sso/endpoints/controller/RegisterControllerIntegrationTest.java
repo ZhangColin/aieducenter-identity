@@ -18,7 +18,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.JWTClaimsSet;
 
 /**
- * {@code POST /api/auth/register} HTTP 黑盒集成测试（issue #18、#22、#26 AC）。
+ * {@code POST /api/sso/register} HTTP 黑盒集成测试（issue #18、#22、#26 AC）。
  *
  * <p>覆盖：注册成功（当场验码 + 建号 + Set-Cookie + JSON 200 {redirectUrl} 带 code&state）、
  * 注册即登录（code 能换 token、同凭据可再登录）、验不过/缺码不建号、密码可选（不设密码 →
@@ -59,7 +59,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         String emailCode = sendEmailCode(EMAIL, "REGISTER");
 
         // JSON 变体成功 = 200 + {redirectUrl}（issue #26；不带 Location）
-        MvcResult result = mvc.perform(post("/api/auth/register")
+        MvcResult result = mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, emailCode, null, PASSWORD)))
             .andExpect(status().isOk())
@@ -87,7 +87,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     void given_registered_when_exchange_code_and_login_again_then_both_work() throws Exception {
         // 注册即登录：发出的 code 能在 /token 正常换 token
         String emailCode = sendEmailCode(EMAIL, "REGISTER");
-        MvcResult register = mvc.perform(post("/api/auth/register")
+        MvcResult register = mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, emailCode, null, PASSWORD)))
             .andExpect(status().isOk())
@@ -106,8 +106,8 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
             .andExpect(jsonPath("$.id_token").isNotEmpty())
             .andExpect(jsonPath("$.refresh_token").isNotEmpty());
 
-        // 注册后同凭据能走 /api/auth/login 登录（JSON 变体成功 200 {redirectUrl}）
-        mvc.perform(post("/api/auth/login")
+        // 注册后同凭据能走 /api/sso/login 登录（JSON 变体成功 200 {redirectUrl}）
+        mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"st2\",\"account\":\"" + EMAIL + "\",\"password\":\"" + PASSWORD + "\"}"))
@@ -120,7 +120,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     void given_wrong_code_when_register_then_400_and_no_account() throws Exception {
         sendEmailCode(EMAIL, "REGISTER");
 
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, "000000", null, PASSWORD)))
             .andExpect(status().isBadRequest())
@@ -132,7 +132,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     /** 当场验码 AC：缺码同错码，不建号。 */
     @Test
     void given_no_code_when_register_then_400_and_no_account() throws Exception {
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, null, null, PASSWORD)))
             .andExpect(status().isBadRequest())
@@ -145,7 +145,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     @Test
     void given_no_password_when_register_then_password_login_fails_but_login_code_works() throws Exception {
         String emailCode = sendEmailCode(EMAIL, "REGISTER");
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, emailCode, null, null)))
             .andExpect(status().isOk());
@@ -154,7 +154,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         assertThat(account.getPasswordHash()).isNull();
 
         // 没设密码 → 密码登录 401
-        mvc.perform(post("/api/auth/login")
+        mvc.perform(post("/api/sso/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"account\":\"" + EMAIL + "\",\"password\":\"whatever\"}"))
@@ -162,7 +162,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
 
         // login-code 验证码登录可登（REGISTER 码与 LOGIN 码分用途，各发各的）
         String loginCode = sendEmailCode(EMAIL, "LOGIN");
-        mvc.perform(post("/api/auth/login-code")
+        mvc.perform(post("/api/sso/login-code")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"state\":\"st\",\"account\":\"" + EMAIL + "\",\"code\":\"" + loginCode + "\"}"))
@@ -180,7 +180,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         createEmailAccount(EMAIL, PASSWORD);
         String emailCode = sendEmailCode(EMAIL, "REGISTER");
 
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(EMAIL, null, emailCode, null, PASSWORD)))
             .andExpect(status().isConflict())
@@ -196,7 +196,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         createPhoneAccount(PHONE, PASSWORD);
         String phoneCode = sendSmsCode(PHONE, "REGISTER");
 
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(null, PHONE, null, phoneCode, PASSWORD)))
             .andExpect(status().isConflict())
@@ -205,7 +205,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
 
     @Test
     void given_neither_email_nor_phone_when_register_then_400() throws Exception {
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(null, null, null, null, PASSWORD)))
             .andExpect(status().isBadRequest())
@@ -214,12 +214,12 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
 
     @Test
     void given_malformed_email_or_phone_when_register_then_400() throws Exception {
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody("not-an-email", null, "000000", null, PASSWORD)))
             .andExpect(status().isBadRequest());
 
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(null, "12345", null, "000000", PASSWORD)))
             .andExpect(status().isBadRequest());
@@ -228,7 +228,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     @Test
     void given_invalid_client_or_redirect_uri_when_register_then_error_without_redirect() throws Exception {
         // client_id 无效 → 400 unauthorized_client，不重定向
-        MvcResult badClient = mvc.perform(post("/api/auth/register")
+        MvcResult badClient = mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"ghost\",\"redirectUri\":\"" + REDIRECT_URI + "\","
                     + "\"email\":\"" + EMAIL + "\",\"emailCode\":\"000000\",\"password\":\"" + PASSWORD + "\"}"))
@@ -238,7 +238,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         assertThat(badClient.getResponse().getHeader("Location")).isNull();
 
         // redirect_uri 未登记 → 400 invalid_request，不重定向
-        MvcResult badRedirect = mvc.perform(post("/api/auth/register")
+        MvcResult badRedirect = mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clientId\":\"" + CLIENT_ID + "\",\"redirectUri\":\"https://evil.example/callback\","
                     + "\"email\":\"" + EMAIL + "\",\"emailCode\":\"000000\",\"password\":\"" + PASSWORD + "\"}"))
@@ -254,7 +254,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     void given_new_phone_with_code_when_register_via_form_then_same_contract_as_json() throws Exception {
         // identity-web 原生 form 顶层提交（issue #23）——form 变体成功保持 302（JSON 变体为 200 {redirectUrl}，#26）
         String phoneCode = sendSmsCode(PHONE, "REGISTER");
-        MvcResult result = mvc.perform(post("/api/auth/register")
+        MvcResult result = mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)
                 .param("redirectUri", REDIRECT_URI)
@@ -280,7 +280,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     void given_scope_when_register_then_token_claims_match_second_sso() throws Exception {
         String scope = "openid profile phone";
         String phoneCode = sendSmsCode(PHONE, "REGISTER");
-        MvcResult register = mvc.perform(post("/api/auth/register")
+        MvcResult register = mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)
                 .param("redirectUri", REDIRECT_URI)
@@ -345,7 +345,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
         createEmailAccount(EMAIL, PASSWORD);
         String emailCode = sendEmailCode(EMAIL, "REGISTER");
 
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)
                 .param("redirectUri", REDIRECT_URI)
@@ -361,7 +361,7 @@ class RegisterControllerIntegrationTest extends SsoIntegrationTestBase {
     void given_no_password_when_register_via_form_then_success() throws Exception {
         String emailCode = sendEmailCode(EMAIL, "REGISTER");
 
-        mvc.perform(post("/api/auth/register")
+        mvc.perform(post("/api/sso/register")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("clientId", CLIENT_ID)
                 .param("redirectUri", REDIRECT_URI)

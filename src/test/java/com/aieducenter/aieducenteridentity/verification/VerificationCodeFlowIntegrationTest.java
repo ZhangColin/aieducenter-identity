@@ -26,7 +26,7 @@ class VerificationCodeFlowIntegrationTest extends IdentityIntegrationTestBase {
 
     /** 发邮件验证码，返回捕获到的真实码。 */
     private String sendEmailCode(String email) throws Exception {
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + email + "\",\"purpose\":\"REGISTER\"}"))
             .andExpect(ApiTestAssertions.assertOk());
@@ -34,7 +34,7 @@ class VerificationCodeFlowIntegrationTest extends IdentityIntegrationTestBase {
     }
 
     private void verifyEmailCode(String email, String code, int expectedErrorStatus) throws Exception {
-        var actions = mvc.perform(post("/api/account/verify-code")
+        var actions = mvc.perform(post("/api/sso/verification-code/verify")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"" + email + "\",\"code\":\"" + code + "\",\"purpose\":\"REGISTER\"}"));
         if (expectedErrorStatus == 200) {
@@ -81,7 +81,7 @@ class VerificationCodeFlowIntegrationTest extends IdentityIntegrationTestBase {
         sendEmailCode("dave@example.com");
 
         // when & then — 60s 冷却期内同邮箱再发 → 邮箱限流 429
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"dave@example.com\",\"purpose\":\"REGISTER\"}"))
             .andExpect(status().isTooManyRequests())
@@ -96,7 +96,7 @@ class VerificationCodeFlowIntegrationTest extends IdentityIntegrationTestBase {
         }
 
         // when & then — 第 11 次（同 IP）→ IP 限流 429
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"ip11@example.com\",\"purpose\":\"REGISTER\"}"))
             .andExpect(status().isTooManyRequests())
@@ -108,7 +108,7 @@ class VerificationCodeFlowIntegrationTest extends IdentityIntegrationTestBase {
     @Test
     void given_send_sms_code_then_captured_equals_redis_and_not_hardcoded() throws Exception {
         // given — 取图形验证码（发短信前置）
-        var captchaResult = mvc.perform(get("/api/captcha"))
+        var captchaResult = mvc.perform(get("/api/sso/captcha"))
             .andExpect(ApiTestAssertions.assertOk())
             .andReturn();
         String body = captchaResult.getResponse().getContentAsString();
@@ -116,7 +116,7 @@ class VerificationCodeFlowIntegrationTest extends IdentityIntegrationTestBase {
         String captchaCode = redisTemplate.opsForValue().get("captcha:" + captchaId);
 
         // when — 发短信
-        mvc.perform(post("/api/account/verification-code/sms")
+        mvc.perform(post("/api/sso/verification-code/sms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"phone\":\"" + PHONE + "\",\"purpose\":\"REGISTER\","
                     + "\"captchaId\":\"" + captchaId + "\",\"captchaCode\":\"" + captchaCode + "\"}"))

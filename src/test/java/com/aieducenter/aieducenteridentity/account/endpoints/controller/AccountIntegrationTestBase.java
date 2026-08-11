@@ -22,7 +22,7 @@ abstract class AccountIntegrationTestBase extends IdentityIntegrationTestBase {
 
     /** 取一个图形验证码，返回 {id, 真码}（真码从 Redis 读出）。 */
     protected Captcha getCaptcha() throws Exception {
-        MvcResult result = mvc.perform(get("/api/captcha"))
+        MvcResult result = mvc.perform(get("/api/sso/captcha"))
             .andExpect(ApiTestAssertions.assertOk())
             .andReturn();
         String body = result.getResponse().getContentAsString();
@@ -33,7 +33,7 @@ abstract class AccountIntegrationTestBase extends IdentityIntegrationTestBase {
 
     /** 发短信验证码并返回内存捕获到的真实码。 */
     protected String sendSmsCode(String phone, String purpose, Captcha captcha) throws Exception {
-        mvc.perform(post("/api/account/verification-code/sms")
+        mvc.perform(post("/api/sso/verification-code/sms")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(smsCodeBody(phone, purpose, captcha)))
             .andExpect(ApiTestAssertions.assertOk());
@@ -42,7 +42,7 @@ abstract class AccountIntegrationTestBase extends IdentityIntegrationTestBase {
 
     /** 发邮箱验证码并返回内存捕获到的真实码。 */
     protected String sendEmailCode(String email, String purpose) throws Exception {
-        mvc.perform(post("/api/account/verification-code/email")
+        mvc.perform(post("/api/sso/verification-code/email")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + email + "\",\"purpose\":\"" + purpose + "\"}"))
             .andExpect(ApiTestAssertions.assertOk());

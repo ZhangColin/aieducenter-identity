@@ -38,7 +38,7 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
         String phone = "13600100001";
         Cookie sso = ssoLoginCookie(phone);
 
-        mvc.perform(get("/api/account/profile").cookie(sso))
+        mvc.perform(get("/api/sso/profile").cookie(sso))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.userId").isString()) // TSID Long 序列化为字符串
             .andExpect(jsonPath("$.data.phone").value(phone))
@@ -50,13 +50,13 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
         String phone = "13600100002";
         Cookie sso = ssoLoginCookie(phone);
 
-        mvc.perform(put("/api/account/profile")
+        mvc.perform(put("/api/sso/profile")
                 .cookie(sso)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"nickname\":\"Colin\",\"avatar\":\"https://cdn/avatar.png\"}"))
             .andExpect(ApiTestAssertions.assertOk());
 
-        mvc.perform(get("/api/account/profile").cookie(sso))
+        mvc.perform(get("/api/sso/profile").cookie(sso))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.nickname").value("Colin"))
             .andExpect(jsonPath("$.data.avatar").value("https://cdn/avatar.png"));
@@ -64,7 +64,7 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
 
     @Test
     void given_no_token_when_get_profile_then_401() throws Exception {
-        mvc.perform(get("/api/account/profile"))
+        mvc.perform(get("/api/sso/profile"))
             .andExpect(status().isUnauthorized());
     }
 
@@ -75,7 +75,7 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
         String phone = "13600100003";
         Cookie sso = ssoLoginCookie(phone);
 
-        mvc.perform(get("/api/account/me").cookie(sso))
+        mvc.perform(get("/api/sso/me").cookie(sso))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.userId").isString())
             .andExpect(jsonPath("$.data.phone").value(phone));
@@ -83,13 +83,13 @@ class AccountProfileIntegrationTest extends AccountIntegrationTestBase {
 
     @Test
     void given_no_token_when_get_me_then_401() throws Exception {
-        mvc.perform(get("/api/account/me"))
+        mvc.perform(get("/api/sso/me"))
             .andExpect(status().isUnauthorized());
     }
 
     @Test
     void given_no_token_when_update_profile_then_401() throws Exception {
-        mvc.perform(put("/api/account/profile")
+        mvc.perform(put("/api/sso/profile")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"nickname\":\"X\"}"))
             .andExpect(status().isUnauthorized());

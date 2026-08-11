@@ -10,7 +10,7 @@ import com.aieducenter.aieducenteridentity.sso.domain.code.AuthorizationCodeStor
 import com.aieducenter.aieducenteridentity.sso.domain.code.IssuedAuthorizationCode;
 
 /**
- * 授权码签发编排——{@code /authorize}（二次 SSO 免登）与 {@code /api/auth/login}（首次登录）共用。
+ * 授权码签发编排——{@code /authorize}（二次 SSO 免登）与 {@code /api/sso/login}（首次登录）共用。
  *
  * <p>发 code（绑 client/redirect_uri/user/nonce/scope）+ 构造 {@code redirect_uri?code=&state=} 回调地址。
  * 不引入 ticket/interactionId（CONTEXT 最简方案）。</p>

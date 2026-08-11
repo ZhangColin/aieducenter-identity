@@ -63,7 +63,7 @@ class SsoKickoutIntegrationTest extends SsoIntegrationTestBase {
         assertSsoEnabled(cookie);
 
         // 改密（HTTP 入口凭 SSO cookie 认人，issue #21）→ 踢出该 userId 所有 SSO 会话
-        mvc.perform(post("/api/account/change-password").cookie(cookie)
+        mvc.perform(post("/api/sso/change-password").cookie(cookie)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"oldPassword\":\"" + PASSWORD + "\",\"newPassword\":\"" + NEW_PASSWORD + "\"}"))
             .andExpect(status().isOk());

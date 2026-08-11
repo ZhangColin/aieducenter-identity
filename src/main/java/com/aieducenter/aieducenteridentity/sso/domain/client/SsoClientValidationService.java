@@ -8,7 +8,7 @@ import com.cartisan.core.stereotype.DomainService;
  * SSO 消费方校验领域服务——client 存活 + redirect_uri / post_logout_redirect_uri 精确匹配白名单的单一真相源
  * （CONTEXT 安全集）。
  *
- * <p>{@code /authorize} 与 {@code /api/auth/login} 两处发 code 前的 client/redirect 校验共用本服务，
+ * <p>{@code /authorize} 与 {@code /api/sso/login} 两处发 code 前的 client/redirect 校验共用本服务，
  * 避免重复实现分叉（安全关键逻辑须只有一份）。redirect_uri 与 post_logout_redirect_uri 各走独立白名单
  * （ADR-0005），均精确匹配、不做前缀/通配；不匹配时不重定向（防开放重定向），抛 {@link OidcException}。</p>
  *

@@ -16,7 +16,7 @@ import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.DomainException;
 
 /**
- * /api/auth/login-code 验证码登录（CONTEXT 登录契约 / issue #22）。
+ * /api/sso/login-code 验证码登录（CONTEXT 登录契约 / issue #22）。
  *
  * <p>校验 client/redirect_uri → 验码（purpose=LOGIN，经 verification 上下文）→
  * 凭已验证联络方式认证（经 {@link AccountAuthAppService#authenticateByIdentifier}：定位账号 + 停用/锁定 +

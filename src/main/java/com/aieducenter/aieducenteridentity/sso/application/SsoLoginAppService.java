@@ -13,7 +13,7 @@ import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
 import com.cartisan.core.exception.DomainException;
 
 /**
- * /api/auth/login 密码登录（CONTEXT 登录契约 / issue #15）。
+ * /api/sso/login 密码登录（CONTEXT 登录契约 / issue #15）。
  *
  * <p>校验 client/redirect_uri → 密码认证（经 {@link AccountAuthAppService#authenticate}：账号定位 +
  * 密码校验 + 停用/锁定 + recordLogin，返 {@link SubjectView}）→ {@link SsoLoginCompletionAppService 统一后半段}：
