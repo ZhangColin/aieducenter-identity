@@ -46,17 +46,25 @@ public class OidcClient {
     }
 
     /**
-     * 构造 identity RP-Initiated Logout 跳转 URL（issue #38）。
+     * 构造 identity RP-Initiated Logout 跳转 URL（issue #38 / #40）。
      *
      * <p>client_id 供 identity 解析 {@code post_logout_redirect_uri} 白名单（独立的 post_logout_redirect_uris
      * 白名单精确匹配，不复用 redirect_uri，ADR-0005）；state 原样回带到 post_logout_redirect_uri。identity 清完
      * SSO 会话+cookie 后，白名单通过则 302 回带。</p>
+     *
+     * <p>{@code idTokenHint}（issue #40）：取自当前 BFF session 持有的 id_token，让 identity 即便 SSO cookie
+     * 丢失也能凭 hint 的 sub 兜底定位要清的会话（#45），并记审计日志。可选——为 null/blank 时不带，登出靠 SSO
+     * cookie 主流程照常（OIDC：hint 是提示非凭据，不强制）。</p>
      */
-    public String logoutUrl(String postLogoutRedirectUri, String state) {
-        return props.getIssuer() + "/logout"
+    public String logoutUrl(String postLogoutRedirectUri, String state, String idTokenHint) {
+        String url = props.getIssuer() + "/logout"
             + "?client_id=" + enc(props.getClientId())
             + "&post_logout_redirect_uri=" + enc(postLogoutRedirectUri)
             + "&state=" + enc(state);
+        if (idTokenHint != null && !idTokenHint.isBlank()) {
+            url += "&id_token_hint=" + enc(idTokenHint);
+        }
+        return url;
     }
 
     /** 用 code + client_secret 服务端换 token（grant_type=authorization_code）。 */

@@ -79,8 +79,12 @@ public class AuthController {
     @PostMapping("/auth/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
         // 1. 清 demo 本地业务会话（BffSessionStore + demo_session cookie）
+        //    先取 id_token 用作 identity /logout 的 id_token_hint（issue #40），再删会话——identity 凭 hint 的 sub
+        //    在 SSO cookie 丢失时兜底定位要清的会话（#45）并记审计；删了就取不到了，顺序不能反。
         Cookie existing = findCookie(request, "demo_session");
+        String idTokenHint = null;
         if (existing != null) {
+            idTokenHint = sessionStore.get(existing.getValue()).map(BffSession::idToken).orElse(null);
             sessionStore.remove(existing.getValue());
         }
         response.addHeader("Set-Cookie", sessionCookie("").maxAge(0).build().toString());
@@ -90,7 +94,7 @@ public class AuthController {
         //    注意：post_logout_redirect_uri 需登记进 demo client 的 post_logout_redirect_uris 白名单（app-registry，独立于 redirect_uri，ADR-0005），否则 identity 清完会话返 200 不跳转。
         String base = props.getAppBaseUrl();
         String postLogoutRedirectUri = base.endsWith("/") ? base : base + "/";
-        return redirect(oidcClient.logoutUrl(postLogoutRedirectUri, OidcClient.randomToken()));
+        return redirect(oidcClient.logoutUrl(postLogoutRedirectUri, OidcClient.randomToken(), idTokenHint));
     }
 
     private static ResponseEntity<Void> redirect(String location) {

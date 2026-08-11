@@ -46,13 +46,34 @@ class OidcClientTest {
     void logoutUrl_contains_required_params() {
         // issue #38：登出走 identity RP-Initiated Logout——构造 GET /logout URL：
         // client_id（identity 凭它解析 post_logout_redirect_uri 白名单）+ post_logout_redirect_uri + state。
+        // id_token_hint 第 3 参为 null（无 BFF session / session 无 id_token）时不带（issue #40）。
         OidcClient client = new OidcClient(props("http://idp"), RestClient.builder());
-        String url = client.logoutUrl("http://demo.localhost:3000/", "st");
+        String url = client.logoutUrl("http://demo.localhost:3000/", "st", null);
         assertThat(url).startsWith("http://idp/logout?");
         assertThat(url).contains("client_id=demo-client");
         assertThat(url).contains("post_logout_redirect_uri="
             + URLEncoder.encode("http://demo.localhost:3000/", StandardCharsets.UTF_8));
         assertThat(url).contains("state=st");
+        assertThat(url).doesNotContain("id_token_hint");
+    }
+
+    @Test
+    void logoutUrl_appends_id_token_hint_when_present() {
+        // issue #40：带上当前 BFF session 持有的 id_token 作 id_token_hint——identity 凭 hint 的 sub 在
+        // SSO cookie 丢失时兜底定位会话（#45）并记审计。值为原始 JWT，需 URL 编码。
+        OidcClient client = new OidcClient(props("http://idp"), RestClient.builder());
+        String idToken = "eyJhbGci.eyJzdWIiOiJ1MSJ9.sig";
+        String url = client.logoutUrl("http://demo.localhost:3000/", "st", idToken);
+        assertThat(url).contains("id_token_hint="
+            + URLEncoder.encode(idToken, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void logoutUrl_omits_id_token_hint_when_blank() {
+        // issue #40：hint 可选——空串/blank 视同无 id_token，不带 id_token_hint（登出主流程靠 SSO cookie）。
+        OidcClient client = new OidcClient(props("http://idp"), RestClient.builder());
+        String url = client.logoutUrl("http://demo.localhost:3000/", "st", "  ");
+        assertThat(url).doesNotContain("id_token_hint");
     }
 
     @Test
