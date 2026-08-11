@@ -18,3 +18,11 @@ identity:
     error-page-url: ${IDENTITY_SSO_ERROR_PAGE_URL}
     app-registry:
       base-url: ${APP_REGISTRY_BASE_URL}
+
+# 入站机机验签凭据查询端点（#46，对齐 payment 迁移）：
+# prod 用裸 ${APP_REGISTRY_BASE_URL}（无默认值）：缺失 env 时启动即失败（fail-fast），
+# 避免静默回落 localhost 导致 URL 替换失效、验签查不到凭据。要求 APP_REGISTRY_BASE_URL 解析到 app-registry 的内网地址。
+# self.*（出站签名凭据）不在本 issue 范围，由 application.yml 的 ${OPENAPI_API_KEY:}/${OPENAPI_API_SECRET:} 走 env。
+cartisan:
+  openapi:
+    apikey-service-url: ${APP_REGISTRY_BASE_URL}/api/app-registry/api-keys/{apiKey}

@@ -30,7 +30,12 @@ cartisan:
     timeout:
       connect-seconds: ${OPENAPI_CONNECT_TIMEOUT:3}
       read-seconds: ${OPENAPI_READ_TIMEOUT:5}
-    apikey-service-url: https://openapi.aieducenter.com/api/v1/api-keys/by-appId
+    # 入站机机验签的凭据查询端点（#46 迁移到 app-registry 统一凭据源，对齐 payment 迁移）：
+    #   GET {APP_REGISTRY_BASE_URL}/api/app-registry/api-keys/{apiKey} → ApiKeyInfo（含明文 apiSecret）
+    # 字面 {apiKey} 占位符由框架 RemoteApiKeyProvider 用调用方 X-Api-Key 头的值替换——丢占位符则替换失效、
+    # 验签查不到凭据（潜伏 bug，#46 修复）。base-url 走 env，本地默认 app-registry 实际端口 8088（非 18080）。
+    # identity 当前无 @RequireSignature 入站端点（鉴权走 SSO cookie），此 URL 暂潜伏；配对避免日后暴露签名端点时静默失效。
+    apikey-service-url: ${APP_REGISTRY_BASE_URL:http://localhost:8088}/api/app-registry/api-keys/{apiKey}
 
 # JWT token 配置（ADR-0002 / issue #11）
 # private-key-path / public-key-path 默认不设 → 内存生成临时密钥（重启失效，prod 必须配 PEM）。

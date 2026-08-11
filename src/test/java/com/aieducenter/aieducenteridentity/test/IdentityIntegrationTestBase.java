@@ -51,10 +51,13 @@ public abstract class IdentityIntegrationTestBase {
     /** demo 登出回跳落点（首页，与登录回调 REDIRECT_URI 分属两个白名单，ADR-0005）。 */
     protected static final String POST_LOGOUT_REDIRECT_URI = "https://demo.localhost/";
 
-    /** app-registry base-url 指向 WireMock（#30）。 */
+    /** app-registry 指向 WireMock（#30 sso-clients bootstrap；#46 api-keys bootstrap 同源）。 */
     @DynamicPropertySource
     static void appRegistryProperties(DynamicPropertyRegistry registry) {
         registry.add("identity.sso.app-registry.base-url", WireMockAppRegistryConfig.WIRE_MOCK::baseUrl);
+        // #46：让 application.yml 的 cartisan.openapi.apikey-service-url（${APP_REGISTRY_BASE_URL:...}）也落到 WireMock，
+        // 使 ApiKeyServiceUrlIntegrationTest 走真实的 URL 模板 + {apiKey} 占位符替换路径（占位符丢失会以 WireMock 未命中暴露）。
+        registry.add("APP_REGISTRY_BASE_URL", WireMockAppRegistryConfig.WIRE_MOCK::baseUrl);
     }
 
     @Autowired
