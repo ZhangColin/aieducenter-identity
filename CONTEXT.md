@@ -12,6 +12,7 @@
 - **限界上下文只经 AppService 交往**（[ADR-0007](docs/adr/0007-cross-context-via-appservice.md)）：上下文之间只走应用层；sso→account 直接注入 account AppService，account→sso 逆流走 port 断环。token 三件套归属 sso、account 应用层=平台用户一体化缝（[ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md)，落实 ADR-0004 决策3）。**适用边界**：ADR-0007 约束的是**跨 bc**（必须走被调方 AppService）；**同 bc 内多个 controller 共用本 bc AppService** 不受限（如 account 的签名 controller 与 sso 浏览器闭环 controller 都可跨 bc 调 AccountAppService）。
 - **对外签名服务 API 独立一层（2026-08-12）** — account + verification 各自在 bc 下开 `@RequireSignature` 签名端点（`/api/account/*` `/api/verification-codes/*` `/api/captchas/*`），与 sso 浏览器闭环（`/api/sso/*`）、OIDC 协议端点（根）三层物理分明。签名即准信、不约束消费方用法（admin bff = 业务应用一视同仁）；不是特殊的"非 SSO 应用接入"。登录只回 `SubjectView`、不发 token。见 [ADR-0009](docs/adr/0009-signed-service-api-per-bc.md)。
 - **后台管理 API（admin-console，2026-08-12）** — admin 后台经签名服务管理终端用户；危险操作加管理调用方白名单 gate（`admin-console`）；operator 走现成 `RequestContext` 透传、零框架改动；新建 `account_operation_log` 审计；登录历史等独立工单做满。见 [ADR-0010](docs/adr/0010-admin-management-api.md)。
+- **后台不处理终端用户密码（2026-08-12）** — admin 侧不暴露任何用户密码操作（重置 / 清除 / 强制改密都不做，合规）；密码改动只走用户自助（验证码重置 / 验旧密改密）。#71 / #72 wontfix。见 [ADR-0011](docs/adr/0011-no-admin-password-management.md)（修订 ADR-0010 范围）。
 
 ## 继承的稳定不变式（平台已定，本项目遵守）
 
@@ -68,7 +69,7 @@
 
 admin 后台（BFF = app_code `admin-console`）作为签名调用方消费 account bc 签名服务，对终端用户 Account 做统一管理。admin 前端只对接 admin BFF。
 
-- **危险操作 gate（过渡）**：管理端点在 `@RequireSignature` 之上加 `@RequireManagementCaller` 注解 + 切面，比对 `callerAppName ∈ 配置白名单`（默认 `admin-console`）。**不是正式 per-app 权限模型**——正式 per-app 权限细化推后。本期管理能力（封号/解锁/清密码/强制改密/踢人等）多数应用层已实现（`AccountStatusAppService` 等，含自动踢人），只差开签名端点 + 上 gate。
+- **危险操作 gate（过渡）**：管理端点在 `@RequireSignature` 之上加 `@RequireManagementCaller` 注解 + 切面，比对 `callerAppName ∈ 配置白名单`（默认 `admin-console`）。**不是正式 per-app 权限模型**——正式 per-app 权限细化推后。本期管理能力（封号/解锁/踢人等；**不含任何密码相关操作**——见 [ADR-0011](docs/adr/0011-no-admin-password-management.md)）多数应用层已实现（`AccountStatusAppService` 等，含自动踢人），只差开签名端点 + 上 gate。
 - **operator 身份 = admin BFF 已登录用户**：走现成 `RequestContext` 跨服务透传（`X-User-Id/X-User-Name`），identity 审计从 `RequestContext.getUserId()/getUserName()` 取，**零框架改动**。前置：admin BFF 把 operator 填进 `RequestContext`（cartisan-security 自动填，或 admin 自加 filter），identity 与框架都零改动。签名路径里 `RequestContext.userId` = operator，**非**被管 Account（Account 总是显式 `{userId}` 路径参数）。
 - **审计**：`account_operation_log` 表，状态变更类管理操作同步写（operatorId/operatorName/action/targetUserId/reason/timestamp）。本期只写不查。
 - **状态操作**：暴露 `disable`（封号，原因必填）/ `activate`（解封）/ `unlock`（解除系统锁定）；`lock`（临时锁定，风控/系统动作）不暴露；不定时解封。
@@ -234,6 +235,7 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - [ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md) token 三件套归属 sso + account 应用层=平台用户一体化缝
 - [ADR-0009](docs/adr/0009-signed-service-api-per-bc.md) 对外签名服务 API 独立一层（按 bc 暴露、签名即准信、登录只回 SubjectView）
 - [ADR-0010](docs/adr/0010-admin-management-api.md) 后台管理 API（admin-console 经签名服务 + 管理调用方白名单 + operator 经 RequestContext + 审计日志）
+- [ADR-0011](docs/adr/0011-no-admin-password-management.md) 后台不处理终端用户密码（修订 ADR-0010 范围；#71/#72 wontfix）
 
 ## 构建分期（重排；旧 issue #5 等及 token-in-login 设计废弃）
 
@@ -264,6 +266,7 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - [x] SSO 应用消费用户信息 = 读走 `/userinfo`、写走签名 `/api/account/*`（双身份：OIDC 消费方 + 签名调用方）
 - [x] 不变式"应用不持有凭据" scope = SSO 浏览器链路（不约束签名服务调用）
 - [x] 后台管理 API（2026-08-12）= admin-console 经签名服务；危险操作加管理调用方白名单（admin-console）过渡 gate；operator 走现成 RequestContext 透传零框架改动；新建 account_operation_log 审计（只写不查）；状态暴露 disable/activate/unlock（lock 不暴露、不定时解封）；登录历史独立工单做满（ADR-0010）
+- [x] 后台不处理终端用户密码（2026-08-12）= admin 侧不暴露任何密码操作（重置 / 清除 / 强制改密都不做，合规）；密码改动只走用户自助（验证码重置 / 验旧密改密）；#71（admin 无码重置 + 清密码）实现后整体回退、#72（强制改密）一并 wontfix（ADR-0011，修订 ADR-0010 范围）
 - [x] 审计基建 + 封号端点（#68）= `account_operation_log` 表（operator 显式取 RequestContext、不借 Auditable，TSID，无软删）+ `OperationType` 枚举（DISABLE 起，后续复用）；`POST /api/account/{userId}/disable`（reason 必填、`@RequireManagementCaller`、复用 `AccountStatusAppService.disable` 封号+踢人、同事务 append 审计）；解封/解锁/踢人随 #69
 - [x] 解封 / 解锁 / 独立踢人端点（#69）= `OperationType` 扩 ACTIVATE/UNLOCK/REVOKE_SESSIONS；`POST /{userId}/activate`·`/{userId}/unlock`·`/{userId}/sessions/revoke`（均 `@RequireManagementCaller`、可选 reason body → 204）；activate/unlock 复用 `AccountStatusAppService`（不改会话）、revoke 复用 `SsoSessionRevoker.revokeQuietly`（不改状态、无会话撤销 0 个不报错），各自同事务 append 审计
 - [ ] namespace 迁移 cookie/public → `/api/sso/*`（#55）

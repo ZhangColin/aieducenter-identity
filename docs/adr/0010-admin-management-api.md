@@ -1,5 +1,7 @@
 # 后台管理 API：admin-console 经签名服务（管理调用方白名单 + operator 经 RequestContext + 审计）
 
+> **范围修订（2026-08-12，[ADR-0011](0011-no-admin-password-management.md)）**：本文原列的「清密码 / 强制改密」两项**已移出范围**——identity 后台不处理终端用户密码（#71 / #72 wontfix）。下文出现的「清密码」「强制改密」字样为立项时历史叙述，以 ADR-0011 为准。
+
 平台后台（admin）要对终端用户 Account 做统一管理（封号/解封/解锁/清密码/强制改密/踢人/审计）。admin 后端（BFF）作为签名调用方消费 account bc 签名服务，admin 前端只对接自己的 BFF。本决策是 [ADR-0009](0009-signed-service-api-per-bc.md)（签名服务按 bc 暴露、签名即准信）在"管理操作"上的延伸——核心要解决"admin 凭什么能做别的签名调用方不能做的危险操作"，以及"本服务怎么知道是哪个运营人员操作的"。
 
 **决定**：
