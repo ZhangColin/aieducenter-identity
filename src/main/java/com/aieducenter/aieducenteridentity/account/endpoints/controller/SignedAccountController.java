@@ -2,13 +2,17 @@ package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aieducenter.aieducenteridentity.account.application.AccountAuthAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountPasswordAppService;
+import com.aieducenter.aieducenteridentity.account.application.AccountSubjectAppService;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.AuthenticateByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.AuthenticateCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterByCodeCommand;
@@ -36,7 +40,8 @@ import jakarta.validation.Valid;
  * 缺失 / 错签名由框架返回 401。</p>
  *
  * <p>落地分期：#58 打通骨架 + {@code authenticate}（tracer bullet）；#59 加按 identifier 三端点
- * （{@code authenticate-by-code} / {@code register} / {@code reset-password}）；{@code {userId}} 读写类端点见后续 ticket。</p>
+ * （{@code authenticate-by-code} / {@code register} / {@code reset-password}）；#60 加按 userId / identifier
+ * 读三端点（{@code GET {userId}} / {@code GET {userId}/profile} / {@code GET /find}）；写类（profile / change-password）见后续 ticket。</p>
  *
  * @since 0.1.0
  */
@@ -49,11 +54,13 @@ public class SignedAccountController {
 
     private final AccountAuthAppService authAppService;
     private final AccountPasswordAppService passwordAppService;
+    private final AccountSubjectAppService subjectAppService;
 
     public SignedAccountController(AccountAuthAppService authAppService,
-            AccountPasswordAppService passwordAppService) {
+            AccountPasswordAppService passwordAppService, AccountSubjectAppService subjectAppService) {
         this.authAppService = authAppService;
         this.passwordAppService = passwordAppService;
+        this.subjectAppService = subjectAppService;
     }
 
     @PostMapping("/authenticate")
@@ -89,5 +96,32 @@ public class SignedAccountController {
         passwordAppService.resetPassword(new ResetPasswordCommand(
             command.identifier(), command.code(), command.newPassword()));
         return ResponseEntity.noContent().build();
+    }
+
+    // ========== #60：按 userId / identifier 读 ==========
+
+    @GetMapping("/{userId}")
+    @Operation(summary = "按 userId 取 subject",
+        description = "签名调用方凭 userId 取 SubjectView（复用 subjectClaims——userId/email/phone/nickname/avatar/status）。"
+            + "userId 无对应账号 → 404 USER_NOT_FOUND。不 gate 可用性——status 兜出、调用方自决。")
+    public ApiResponse<SubjectView> getSubject(@PathVariable Long userId) {
+        return ApiResponse.ok(subjectAppService.subjectClaims(userId));
+    }
+
+    @GetMapping("/{userId}/profile")
+    @Operation(summary = "按 userId 取 profile",
+        description = "签名调用方凭 userId 取 SubjectView 作 profile——SubjectView 已含 nickname/avatar，"
+            + "不另造 profile 读模型路径（与 GET /{userId} 同 payload，仅语义区分）。")
+    public ApiResponse<SubjectView> getProfile(@PathVariable Long userId) {
+        return ApiResponse.ok(subjectAppService.subjectClaims(userId));
+    }
+
+    @GetMapping("/find")
+    @Operation(summary = "按 email/phone 查 subject",
+        description = "签名调用方凭 email 或 phone 查 SubjectView（email 优先）。命中 → SubjectView；"
+            + "未命中 → 404 USER_NOT_FOUND；email/phone 都未填 → 400 CONTACT_REQUIRED。纯读、不 gate、无副作用。")
+    public ApiResponse<SubjectView> find(@RequestParam(required = false) String email,
+            @RequestParam(required = false) String phone) {
+        return ApiResponse.ok(subjectAppService.findSubject(email, phone));
     }
 }

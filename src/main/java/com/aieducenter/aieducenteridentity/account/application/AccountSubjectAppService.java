@@ -49,7 +49,52 @@ public class AccountSubjectAppService {
     public SubjectView subjectClaims(Long userId) {
         Account account = accountRepository.findById(userId)
             .orElseThrow(() -> new DomainException(AccountError.USER_NOT_FOUND));
-        Profile profile = profileRepository.findById(userId).orElse(null);
+        return toSubjectView(account);
+    }
+
+    /**
+     * 按联络方式查 subject 声明数据（签名服务 {@code GET /api/account/find}，#60）。
+     *
+     * <p>纯读查询——email 优先于 phone（与 {@code AccountAuthAppService} 的「email 优先」口径一致），
+     * 定位到账号后投影 {@link SubjectView}。<b>不 gate</b>可用性（与 {@link #subjectClaims(Long)} 一致——
+     * status 兜出、调用方自决）；<b>不记登录态、无写副作用</b>（区别于
+     * {@code AccountAuthAppService.authenticateByIdentifier} 的 {@code recordLogin} 写侧）。</p>
+     *
+     * <p>email/phone 至少填一个——都没给（含空白串）抛 {@link AccountError#CONTACT_REQUIRED}（400）；
+     * 两者都给时以 email 为准。未命中（含已软删记录——仓储查自动过滤）抛 {@link AccountError#USER_NOT_FOUND}
+     * （404）。不校验格式——畸形联络方式只是查不到、落 USER_NOT_FOUND，保持纯查询语义。</p>
+     *
+     * @param email 邮箱（可空，与 phone 至少其一）
+     * @param phone 手机号（可空，与 email 至少其一）
+     * @return subject 读模型（含可用性 status，调用方自决 gate）
+     * @throws DomainException CONTACT_REQUIRED（400，email/phone 都未填）/ USER_NOT_FOUND（404，未命中）
+     */
+    @Transactional(readOnly = true)
+    public SubjectView findSubject(String email, String phone) {
+        String normalizedEmail = normalizeContact(email);
+        String normalizedPhone = normalizeContact(phone);
+        if (normalizedEmail == null && normalizedPhone == null) {
+            throw new DomainException(AccountError.CONTACT_REQUIRED);
+        }
+        Account account = normalizedEmail != null
+            ? accountRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new DomainException(AccountError.USER_NOT_FOUND))
+            : accountRepository.findByPhone(normalizedPhone)
+                .orElseThrow(() -> new DomainException(AccountError.USER_NOT_FOUND));
+        return toSubjectView(account);
+    }
+
+    /** 装载 Profile 并投影出 SubjectView（subjectClaims / findSubject 共用——读模型映射集中一处）。 */
+    private SubjectView toSubjectView(Account account) {
+        Profile profile = profileRepository.findById(account.getId()).orElse(null);
         return SubjectView.of(account, profile);
+    }
+
+    /** 归一联络方式：去首尾空白，空串/纯空白归 null（email/phone 均可空，空串等同未填）。 */
+    private static String normalizeContact(String contact) {
+        if (contact == null || contact.isBlank()) {
+            return null;
+        }
+        return contact.trim();
     }
 }

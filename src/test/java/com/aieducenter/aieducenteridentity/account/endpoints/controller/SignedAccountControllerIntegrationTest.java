@@ -1,6 +1,7 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -25,7 +26,8 @@ import com.aieducenter.aieducenteridentity.verification.application.dto.SendSmsC
 import com.cartisan.test.base.ApiTestAssertions;
 
 /**
- * account bc 签名服务端点集成测试（#58 authenticate / #59 authenticate-by-code · register · reset-password）。
+ * account bc 签名服务端点集成测试（#58 authenticate / #59 authenticate-by-code · register · reset-password /
+ * #60 GET {userId} · {userId}/profile · find）。
  *
  * <p>全链路：签名 gate（{@code @RequireSignature} → {@code SignatureVerificationFilter} / 拦截器 →
  * {@code RemoteApiKeyProvider} 解析 WireMock 预置的 api-keys stub）→ controller 委托本 bc AppService
@@ -39,8 +41,8 @@ import com.cartisan.test.base.ApiTestAssertions;
  *
  * <p>签名 gate 是 controller 级（类级 {@code @RequireSignature}），{@code authenticate} 的
  * 缺签名头 / 篡改签名 → 401 已证明该 gate 对本 controller 所有端点生效；#59 各端点（authenticate-by-code /
- * register / reset-password）各取一条篡改签名 → 401 作代表点，覆盖 AC「各端点错签名 → 401」，
- * 不再逐端点重复测框架签名算法本身。</p>
+ * register / reset-password）+ #60 {@code GET /{userId}} 各取一条篡改签名 → 401 作代表点，
+ * 覆盖 AC「各端点错签名 → 401」，不再逐端点重复测框架签名算法本身。</p>
  */
 @Transactional
 class SignedAccountControllerIntegrationTest extends IdentityIntegrationTestBase {
@@ -64,6 +66,13 @@ class SignedAccountControllerIntegrationTest extends IdentityIntegrationTestBase
             .contentType(MediaType.APPLICATION_JSON)
             .content(body);
         signer.sign(body).forEach(req::header);
+        return req;
+    }
+
+    /** 带 5 个合法签名头 GET（无 body——framework queryParams 恒不参与签名串，query 参数随请求照带）。 */
+    private MockHttpServletRequestBuilder signedGet(String path) {
+        MockHttpServletRequestBuilder req = get(path);
+        signer.sign(null).forEach(req::header);
         return req;
     }
 
@@ -355,5 +364,92 @@ class SignedAccountControllerIntegrationTest extends IdentityIntegrationTestBase
         mvc.perform(signedPost("/api/account/authenticate",
             "{\"identifier\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}"))
             .andExpect(ApiTestAssertions.assertOk());
+    }
+
+    // ========== #60：GET /{userId} · /{userId}/profile · /find（按 userId / identifier 读）==========
+
+    @Test
+    void given_valid_signature_and_existing_user_id_when_get_subject_then_returns_subject_view() throws Exception {
+        String email = "getbyid-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+
+        mvc.perform(signedGet("/api/account/" + userId))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.userId").value(userId))
+            .andExpect(jsonPath("$.data.email").value(email))
+            .andExpect(jsonPath("$.data.status").value("USABLE"));
+    }
+
+    @Test
+    void given_valid_signature_but_unknown_user_id_when_get_subject_then_returns_404() throws Exception {
+        // 不存在的 userId → 标准错误响应（404 USER_NOT_FOUND），非 OIDC {error}
+        mvc.perform(signedGet("/api/account/99999999999"))
+            .andExpect(status().isNotFound())
+            .andExpect(ApiTestAssertions.assertError(404))
+            .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    void given_valid_signature_and_existing_user_id_when_get_profile_then_returns_subject_view() throws Exception {
+        String email = "getprofile-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+
+        // /{userId}/profile 与 /{userId} 同 payload（SubjectView 已含 nickname/avatar），仅语义区分
+        mvc.perform(signedGet("/api/account/" + userId + "/profile"))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.userId").value(userId))
+            .andExpect(jsonPath("$.data.email").value(email));
+    }
+
+    @Test
+    void given_valid_signature_and_email_hit_when_find_then_returns_subject_view() throws Exception {
+        String email = "find-email-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+
+        mvc.perform(signedGet("/api/account/find").param("email", email))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.userId").value(userId))
+            .andExpect(jsonPath("$.data.email").value(email));
+    }
+
+    @Test
+    void given_valid_signature_and_phone_hit_when_find_then_returns_subject_view() throws Exception {
+        String phone = "13900150060";
+        Long userId = createPhoneAccount(phone, PASSWORD);
+
+        mvc.perform(signedGet("/api/account/find").param("phone", phone))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.userId").value(userId))
+            .andExpect(jsonPath("$.data.phone").value(phone));
+    }
+
+    @Test
+    void given_valid_signature_but_email_miss_when_find_then_returns_404() throws Exception {
+        // 未命中 → 标准错误响应（404 USER_NOT_FOUND）
+        mvc.perform(signedGet("/api/account/find").param("email", "nobody-sig@example.com"))
+            .andExpect(status().isNotFound())
+            .andExpect(ApiTestAssertions.assertError(404));
+    }
+
+    @Test
+    void given_valid_signature_but_no_query_params_when_find_then_returns_400() throws Exception {
+        // email/phone 都没填 → 400 CONTACT_REQUIRED
+        mvc.perform(signedGet("/api/account/find"))
+            .andExpect(status().isBadRequest())
+            .andExpect(ApiTestAssertions.assertError(400));
+    }
+
+    @Test
+    void given_tampered_signature_when_get_subject_then_returns_401() throws Exception {
+        Long userId = createEmailAccount("getbyid-gate@example.com", PASSWORD);
+
+        Map<String, String> headers = signer.sign(null);
+        headers.put(TestSignatureHelper.HEADER_SIGN, headers.get(TestSignatureHelper.HEADER_SIGN) + "deadbeef");
+
+        MockHttpServletRequestBuilder req = get("/api/account/" + userId);
+        headers.forEach(req::header);
+
+        // 类级 @RequireSignature gate：篡改签名 → 401（AC「各端点错签名 → 401」，GET 读类端点取 getSubject 作代表点）
+        mvc.perform(req).andExpect(status().isUnauthorized());
     }
 }
