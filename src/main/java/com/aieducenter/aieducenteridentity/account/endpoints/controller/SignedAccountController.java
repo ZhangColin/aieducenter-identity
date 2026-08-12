@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.aieducenter.aieducenteridentity.account.application.AccountAuthAppService;
+import com.aieducenter.aieducenteridentity.account.application.AccountManagementAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountPasswordAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountProfileAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountSubjectAppService;
@@ -22,7 +23,9 @@ import com.aieducenter.aieducenteridentity.account.application.dto.command.Regis
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.UpdateProfileCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.response.AccountManagementView;
 import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectView;
+import com.aieducenter.aieducenteridentity.account.endpoints.web.RequireManagementCaller;
 import com.cartisan.openapi.annotation.RequireSignature;
 import com.cartisan.web.response.ApiResponse;
 
@@ -62,14 +65,16 @@ public class SignedAccountController {
     private final AccountPasswordAppService passwordAppService;
     private final AccountProfileAppService profileAppService;
     private final AccountSubjectAppService subjectAppService;
+    private final AccountManagementAppService managementAppService;
 
     public SignedAccountController(AccountAuthAppService authAppService,
             AccountPasswordAppService passwordAppService, AccountProfileAppService profileAppService,
-            AccountSubjectAppService subjectAppService) {
+            AccountSubjectAppService subjectAppService, AccountManagementAppService managementAppService) {
         this.authAppService = authAppService;
         this.passwordAppService = passwordAppService;
         this.profileAppService = profileAppService;
         this.subjectAppService = subjectAppService;
+        this.managementAppService = managementAppService;
     }
 
     @PostMapping("/authenticate")
@@ -156,5 +161,18 @@ public class SignedAccountController {
             @Valid @RequestBody ChangePasswordCommand command) {
         passwordAppService.changePassword(userId, command);
         return ResponseEntity.noContent().build();
+    }
+
+    // ========== #67：后台管理（admin-console，@RequireManagementCaller）==========
+
+    @GetMapping("/{userId}/management")
+    @RequireManagementCaller
+    @Operation(summary = "管理详情",
+        description = "admin-console 签名调用方取账号管理全貌（status / locked / hasPassword + 资料），"
+            + "区别于面向终端应用的 SubjectView——分列 status/locked、暴露 hasPassword。"
+            + "@RequireManagementCaller 白名单 gate（默认 admin-console）：非白名单签名调用方 → 403；"
+            + "未签名 → 401（签名 gate）。userId 无对应账号 → 404 USER_NOT_FOUND。")
+    public ApiResponse<AccountManagementView> getManagementDetail(@PathVariable Long userId) {
+        return ApiResponse.ok(managementAppService.managementDetail(userId));
     }
 }

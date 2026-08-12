@@ -11,6 +11,7 @@
 - **token 是 OIDC 产物，归 `/token` 端点**：access/id/refresh 签给消费方 BFF，浏览器永不接触（BFF 模式）。login/register 不签 token 返回，只建会话发 code。
 - **限界上下文只经 AppService 交往**（[ADR-0007](docs/adr/0007-cross-context-via-appservice.md)）：上下文之间只走应用层；sso→account 直接注入 account AppService，account→sso 逆流走 port 断环。token 三件套归属 sso、account 应用层=平台用户一体化缝（[ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md)，落实 ADR-0004 决策3）。**适用边界**：ADR-0007 约束的是**跨 bc**（必须走被调方 AppService）；**同 bc 内多个 controller 共用本 bc AppService** 不受限（如 account 的签名 controller 与 sso 浏览器闭环 controller 都可跨 bc 调 AccountAppService）。
 - **对外签名服务 API 独立一层（2026-08-12）** — account + verification 各自在 bc 下开 `@RequireSignature` 签名端点（`/api/account/*` `/api/verification-codes/*` `/api/captchas/*`），与 sso 浏览器闭环（`/api/sso/*`）、OIDC 协议端点（根）三层物理分明。签名即准信、不约束消费方用法（admin bff = 业务应用一视同仁）；不是特殊的"非 SSO 应用接入"。登录只回 `SubjectView`、不发 token。见 [ADR-0009](docs/adr/0009-signed-service-api-per-bc.md)。
+- **后台管理 API（admin-console，2026-08-12）** — admin 后台经签名服务管理终端用户；危险操作加管理调用方白名单 gate（`admin-console`）；operator 走现成 `RequestContext` 透传、零框架改动；新建 `account_operation_log` 审计；登录历史等独立工单做满。见 [ADR-0010](docs/adr/0010-admin-management-api.md)。
 
 ## 继承的稳定不变式（平台已定，本项目遵守）
 
@@ -62,6 +63,16 @@
 - **per-app 操作权限**：本期"签名即准信 + 操作白名单"起步（默认签名应用可调全白名单、危险操作不暴露）；细粒度 per-app 权限推后整体设计。
 
 **SSO 接入应用消费用户信息**：SSO 应用 = **OIDC 消费方 + 签名调用方双身份**——读**当前登录用户**基本信息走 `/userinfo`（OIDC 标准，BFF 持 access_token，scope 控制字段）；改 profile / 改密 / 读他人 / 批量管理走签名 `/api/account/*`（用其 apiKey）。非 SSO（纯签名）应用只有后者、无 token 概念。
+
+### 后台管理 API（admin-console 经签名服务）
+
+admin 后台（BFF = app_code `admin-console`）作为签名调用方消费 account bc 签名服务，对终端用户 Account 做统一管理。admin 前端只对接 admin BFF。
+
+- **危险操作 gate（过渡）**：管理端点在 `@RequireSignature` 之上加 `@RequireManagementCaller` 注解 + 切面，比对 `callerAppName ∈ 配置白名单`（默认 `admin-console`）。**不是正式 per-app 权限模型**——正式 per-app 权限细化推后。本期管理能力（封号/解锁/清密码/强制改密/踢人等）多数应用层已实现（`AccountStatusAppService` 等，含自动踢人），只差开签名端点 + 上 gate。
+- **operator 身份 = admin BFF 已登录用户**：走现成 `RequestContext` 跨服务透传（`X-User-Id/X-User-Name`），identity 审计从 `RequestContext.getUserId()/getUserName()` 取，**零框架改动**。前置：admin BFF 把 operator 填进 `RequestContext`（cartisan-security 自动填，或 admin 自加 filter），identity 与框架都零改动。签名路径里 `RequestContext.userId` = operator，**非**被管 Account（Account 总是显式 `{userId}` 路径参数）。
+- **审计**：`account_operation_log` 表，状态变更类管理操作同步写（operatorId/operatorName/action/targetUserId/reason/timestamp）。本期只写不查。
+- **状态操作**：暴露 `disable`（封号，原因必填）/ `activate`（解封）/ `unlock`（解除系统锁定）；`lock`（临时锁定，风控/系统动作）不暴露；不定时解封。
+- **范围切割**：登录/安全事件流水（登录历史）不在本期，独立工单做满；后台开号/注销删号/批量操作/解绑社交（依赖 Phase 3）= 后台二期 backlog。见 [ADR-0010](docs/adr/0010-admin-management-api.md)。
 
 ### 登录契约（/authorize 状态机 + /api/sso/login）
 ```
@@ -222,6 +233,7 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - [ADR-0007](docs/adr/0007-cross-context-via-appservice.md) 跨上下文调用只走被调方 AppService（服务级 DDD 原则）
 - [ADR-0008](docs/adr/0008-token-ownership-sso-account-user-api.md) token 三件套归属 sso + account 应用层=平台用户一体化缝
 - [ADR-0009](docs/adr/0009-signed-service-api-per-bc.md) 对外签名服务 API 独立一层（按 bc 暴露、签名即准信、登录只回 SubjectView）
+- [ADR-0010](docs/adr/0010-admin-management-api.md) 后台管理 API（admin-console 经签名服务 + 管理调用方白名单 + operator 经 RequestContext + 审计日志）
 
 ## 构建分期（重排；旧 issue #5 等及 token-in-login 设计废弃）
 
@@ -251,10 +263,14 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - [x] 对外签名服务 API（2026-08-12）= account + verification bc 各自暴露 `@RequireSignature` 签名端点；签名即准信、不约束消费方；登录只回 `SubjectView` 不发 token；与 admin bff 一视同仁；namespace 三层（OIDC 根 / `/api/sso/*` 浏览器 / 签名服务按 bc）
 - [x] SSO 应用消费用户信息 = 读走 `/userinfo`、写走签名 `/api/account/*`（双身份：OIDC 消费方 + 签名调用方）
 - [x] 不变式"应用不持有凭据" scope = SSO 浏览器链路（不约束签名服务调用）
+- [x] 后台管理 API（2026-08-12）= admin-console 经签名服务；危险操作加管理调用方白名单（admin-console）过渡 gate；operator 走现成 RequestContext 透传零框架改动；新建 account_operation_log 审计（只写不查）；状态暴露 disable/activate/unlock（lock 不暴露、不定时解封）；登录历史独立工单做满（ADR-0010）
 - [ ] namespace 迁移 cookie/public → `/api/sso/*`（#55）
 - [ ] 签名服务 API 落地（#56，前置 #55）
 - [ ] identity-web 个人中心 me/profile/改密（后端就绪、前端未接，#57）
-- [ ] per-app 操作权限细化（推后整体设计）
+- [ ] per-app 操作权限细化（管理操作授权终态；本期 management-caller 白名单是过渡 stopgap，见 ADR-0010）—— #64
+- [ ] 后台管理（二期）：后台直接开号 / 注销·删除账号 / 批量操作（封禁启用·导入·导出）/ 解绑社交账号（依赖 Phase 3 external_identities）—— #65
+- [ ] 登录/安全事件流水（登录历史）—— 所有登录路径埋点 + 事件表 + 后台查询，独立做满（ADR-0010 范围切割）—— #63
+- [ ]（推后/平台级）operator 独立成"BFF 登录用户"之外的一等概念（RequestContext 加 operatorId 字段 + OpenApiClient 出站白名单）→ 给 cartisan-boot 提 issue；本期方案②用现有 X-User-Id/X-User-Name，不需要
 - [ ] 真实短信/邮件网关接入（计费/签名报备；邮件可配 mailpit 类假收件箱联调）— 独立排期
 - [ ] 行为验证码（滑块类 SaaS）— 随真实短信通道一起评估
 - [ ] MFA — 本期不做（除非未来特别需求）
