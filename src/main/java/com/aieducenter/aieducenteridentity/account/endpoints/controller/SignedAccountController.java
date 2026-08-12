@@ -5,6 +5,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -12,12 +13,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.aieducenter.aieducenteridentity.account.application.AccountAuthAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountPasswordAppService;
+import com.aieducenter.aieducenteridentity.account.application.AccountProfileAppService;
 import com.aieducenter.aieducenteridentity.account.application.AccountSubjectAppService;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.AuthenticateByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.AuthenticateCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.command.ChangePasswordCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.command.UpdateProfileCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.response.SubjectView;
 import com.cartisan.openapi.annotation.RequireSignature;
 import com.cartisan.web.response.ApiResponse;
@@ -41,7 +45,9 @@ import jakarta.validation.Valid;
  *
  * <p>落地分期：#58 打通骨架 + {@code authenticate}（tracer bullet）；#59 加按 identifier 三端点
  * （{@code authenticate-by-code} / {@code register} / {@code reset-password}）；#60 加按 userId / identifier
- * 读三端点（{@code GET {userId}} / {@code GET {userId}/profile} / {@code GET /find}）；写类（profile / change-password）见后续 ticket。</p>
+ * 读三端点（{@code GET {userId}} / {@code GET {userId}/profile} / {@code GET /find}）；#61 加按 userId 写两端点
+ * （{@code PUT {userId}/profile} / {@code POST {userId}/change-password}）——签名路径下 {@code RequestContext.getUserId()}
+ * 为 null，故走 AppService 的 userId 参数版本（非 cookie 版 {@code updateCurrentProfile} / {@code changePassword}）。</p>
  *
  * @since 0.1.0
  */
@@ -54,12 +60,15 @@ public class SignedAccountController {
 
     private final AccountAuthAppService authAppService;
     private final AccountPasswordAppService passwordAppService;
+    private final AccountProfileAppService profileAppService;
     private final AccountSubjectAppService subjectAppService;
 
     public SignedAccountController(AccountAuthAppService authAppService,
-            AccountPasswordAppService passwordAppService, AccountSubjectAppService subjectAppService) {
+            AccountPasswordAppService passwordAppService, AccountProfileAppService profileAppService,
+            AccountSubjectAppService subjectAppService) {
         this.authAppService = authAppService;
         this.passwordAppService = passwordAppService;
+        this.profileAppService = profileAppService;
         this.subjectAppService = subjectAppService;
     }
 
@@ -123,5 +132,29 @@ public class SignedAccountController {
     public ApiResponse<SubjectView> find(@RequestParam(required = false) String email,
             @RequestParam(required = false) String phone) {
         return ApiResponse.ok(subjectAppService.findSubject(email, phone));
+    }
+
+    // ========== #61：按 userId 写（profile / change-password）==========
+
+    @PutMapping("/{userId}/profile")
+    @Operation(summary = "按 userId 改 profile",
+        description = "签名调用方凭 userId 改昵称/头像（仅更新非空字段）。成功 → 204。委托"
+            + " updateProfile(userId, …)——签名路径下 RequestContext.getUserId() 为 null，故走 userId 参数版本"
+            + "（非 cookie 版 updateCurrentProfile）。userId 无对应账号 → 404 USER_NOT_FOUND。")
+    public ResponseEntity<Void> updateProfile(@PathVariable Long userId,
+            @Valid @RequestBody UpdateProfileCommand command) {
+        profileAppService.updateProfile(userId, command);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{userId}/change-password")
+    @Operation(summary = "按 userId 改密码",
+        description = "签名调用方凭 userId + 旧密码改密码（验旧密、改后踢出所有会话）。成功 → 204；"
+            + "旧密错 → 标准错误响应（400 ACCOUNT_005）；新旧同 → 标准错误响应（400 ACCOUNT_006）。"
+            + "委托 changePassword(userId, …)——签名路径下走 userId 参数版本（非 cookie 版 changePassword）。")
+    public ResponseEntity<Void> changePassword(@PathVariable Long userId,
+            @Valid @RequestBody ChangePasswordCommand command) {
+        passwordAppService.changePassword(userId, command);
+        return ResponseEntity.noContent().build();
     }
 }

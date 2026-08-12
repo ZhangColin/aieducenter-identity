@@ -3,6 +3,7 @@ package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -27,7 +28,7 @@ import com.cartisan.test.base.ApiTestAssertions;
 
 /**
  * account bc 签名服务端点集成测试（#58 authenticate / #59 authenticate-by-code · register · reset-password /
- * #60 GET {userId} · {userId}/profile · find）。
+ * #60 GET {userId} · {userId}/profile · find / #61 PUT {userId}/profile · POST {userId}/change-password）。
  *
  * <p>全链路：签名 gate（{@code @RequireSignature} → {@code SignatureVerificationFilter} / 拦截器 →
  * {@code RemoteApiKeyProvider} 解析 WireMock 预置的 api-keys stub）→ controller 委托本 bc AppService
@@ -41,8 +42,13 @@ import com.cartisan.test.base.ApiTestAssertions;
  *
  * <p>签名 gate 是 controller 级（类级 {@code @RequireSignature}），{@code authenticate} 的
  * 缺签名头 / 篡改签名 → 401 已证明该 gate 对本 controller 所有端点生效；#59 各端点（authenticate-by-code /
- * register / reset-password）+ #60 {@code GET /{userId}} 各取一条篡改签名 → 401 作代表点，
- * 覆盖 AC「各端点错签名 → 401」，不再逐端点重复测框架签名算法本身。</p>
+ * register / reset-password）+ #60 {@code GET /{userId}} + #61 {@code PUT {userId}/profile} ·
+ * {@code POST {userId}/change-password} 各取一条篡改签名 → 401 作代表点，覆盖 AC「各端点错签名 → 401」，
+ * 不再逐端点重复测框架签名算法本身。</p>
+ *
+ * <p>#61 写类端点额外验「委托 userId 参数版本而非 RequestContext 版」：签名路径下
+ * {@code RequestContext.getUserId()} 为 null，cookie 版 {@code updateCurrentProfile} / {@code changePassword}
+ * 会因 userId=null 抛 USER_NOT_FOUND——故能成功写（204）即证明 controller 调的是 userId 参数版本。</p>
  */
 @Transactional
 class SignedAccountControllerIntegrationTest extends IdentityIntegrationTestBase {
@@ -73,6 +79,15 @@ class SignedAccountControllerIntegrationTest extends IdentityIntegrationTestBase
     private MockHttpServletRequestBuilder signedGet(String path) {
         MockHttpServletRequestBuilder req = get(path);
         signer.sign(null).forEach(req::header);
+        return req;
+    }
+
+    /** 带 5 个合法签名头 PUT JSON。 */
+    private MockHttpServletRequestBuilder signedPut(String path, String body) {
+        MockHttpServletRequestBuilder req = put(path)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body);
+        signer.sign(body).forEach(req::header);
         return req;
     }
 
@@ -450,6 +465,136 @@ class SignedAccountControllerIntegrationTest extends IdentityIntegrationTestBase
         headers.forEach(req::header);
 
         // 类级 @RequireSignature gate：篡改签名 → 401（AC「各端点错签名 → 401」，GET 读类端点取 getSubject 作代表点）
+        mvc.perform(req).andExpect(status().isUnauthorized());
+    }
+
+    // ========== #61：PUT /{userId}/profile · POST /{userId}/change-password（按 userId 写）==========
+
+    @Test
+    void given_valid_signature_and_nickname_avatar_when_update_profile_then_204_and_reflects_change()
+        throws Exception {
+        String email = "profile-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+
+        String body = "{\"nickname\":\"Colin\",\"avatar\":\"https://cdn/avatar.png\"}";
+
+        // 签名路径下 RequestContext.getUserId() 为 null——能成功改（204）即证明委托的是 userId 参数版
+        // updateProfile(userId, …)，而非 cookie 版 updateCurrentProfile（后者会因 userId=null 抛 USER_NOT_FOUND）
+        mvc.perform(signedPut("/api/account/" + userId + "/profile", body))
+            .andExpect(status().isNoContent());
+
+        // GET /{userId}/profile（SubjectView 已含 nickname/avatar）兜出刚写入的字段
+        mvc.perform(signedGet("/api/account/" + userId + "/profile"))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.userId").value(userId))
+            .andExpect(jsonPath("$.data.nickname").value("Colin"))
+            .andExpect(jsonPath("$.data.avatar").value("https://cdn/avatar.png"));
+    }
+
+    @Test
+    void given_valid_signature_and_only_nickname_when_update_profile_then_avatar_unchanged()
+        throws Exception {
+        String email = "profile-partial-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+
+        // 先写 nickname + avatar
+        mvc.perform(signedPut("/api/account/" + userId + "/profile",
+            "{\"nickname\":\"OldNick\",\"avatar\":\"https://cdn/old.png\"}"))
+            .andExpect(status().isNoContent());
+
+        // 仅传 nickname（avatar 留空 → 不修改，仅更新非空字段）
+        mvc.perform(signedPut("/api/account/" + userId + "/profile", "{\"nickname\":\"NewNick\"}"))
+            .andExpect(status().isNoContent());
+
+        mvc.perform(signedGet("/api/account/" + userId + "/profile"))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.nickname").value("NewNick"))
+            .andExpect(jsonPath("$.data.avatar").value("https://cdn/old.png"));
+    }
+
+    @Test
+    void given_valid_signature_and_correct_old_password_when_change_password_then_204_and_new_works()
+        throws Exception {
+        String email = "changepw-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+        String newPassword = "NewPass5678";
+
+        String body = "{\"oldPassword\":\"" + PASSWORD + "\",\"newPassword\":\"" + newPassword + "\"}";
+
+        mvc.perform(signedPost("/api/account/" + userId + "/change-password", body))
+            .andExpect(status().isNoContent());
+
+        // 改密生效：新密码能验密登录、旧密码不行
+        mvc.perform(signedPost("/api/account/authenticate",
+            "{\"identifier\":\"" + email + "\",\"password\":\"" + newPassword + "\"}"))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.email").value(email));
+        mvc.perform(signedPost("/api/account/authenticate",
+            "{\"identifier\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void given_valid_signature_but_wrong_old_password_when_change_password_then_returns_error()
+        throws Exception {
+        String email = "changepw-wrongold-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+
+        String body = "{\"oldPassword\":\"WrongOld999\",\"newPassword\":\"NewPass5678\"}";
+
+        // 旧密错 → 标准错误响应（400 ACCOUNT_005），非 OIDC {error}
+        mvc.perform(signedPost("/api/account/" + userId + "/change-password", body))
+            .andExpect(status().isBadRequest())
+            .andExpect(ApiTestAssertions.assertError(400))
+            .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    void given_valid_signature_but_new_same_as_old_when_change_password_then_returns_error()
+        throws Exception {
+        String email = "changepw-sameold-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+
+        String body = "{\"oldPassword\":\"" + PASSWORD + "\",\"newPassword\":\"" + PASSWORD + "\"}";
+
+        // 新旧同 → 标准错误响应（400 ACCOUNT_006），非 OIDC {error}
+        mvc.perform(signedPost("/api/account/" + userId + "/change-password", body))
+            .andExpect(status().isBadRequest())
+            .andExpect(ApiTestAssertions.assertError(400))
+            .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    void given_tampered_signature_when_update_profile_then_returns_401() throws Exception {
+        Long userId = createEmailAccount("profile-gate@example.com", PASSWORD);
+        String body = "{\"nickname\":\"X\"}";
+
+        Map<String, String> headers = signer.sign(body);
+        headers.put(TestSignatureHelper.HEADER_SIGN, headers.get(TestSignatureHelper.HEADER_SIGN) + "deadbeef");
+
+        MockHttpServletRequestBuilder req = put("/api/account/" + userId + "/profile")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body);
+        headers.forEach(req::header);
+
+        // 类级 @RequireSignature gate：篡改签名 → 401（AC「各端点错签名 → 401」，PUT 写类取 update_profile 作代表点）
+        mvc.perform(req).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void given_tampered_signature_when_change_password_then_returns_401() throws Exception {
+        Long userId = createEmailAccount("changepw-gate@example.com", PASSWORD);
+        String body = "{\"oldPassword\":\"" + PASSWORD + "\",\"newPassword\":\"NewPass5678\"}";
+
+        Map<String, String> headers = signer.sign(body);
+        headers.put(TestSignatureHelper.HEADER_SIGN, headers.get(TestSignatureHelper.HEADER_SIGN) + "deadbeef");
+
+        MockHttpServletRequestBuilder req = post("/api/account/" + userId + "/change-password")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body);
+        headers.forEach(req::header);
+
+        // 类级 @RequireSignature gate：篡改签名 → 401（POST 写类取 change_password 作代表点）
         mvc.perform(req).andExpect(status().isUnauthorized());
     }
 }

@@ -70,12 +70,27 @@ public class AccountPasswordAppService {
     }
 
     /**
-     * 修改密码（验证旧密码；需登录态）。
+     * 修改密码（验证旧密码；需登录态）。SSO 浏览器闭环（{@code /api/sso/change-password}）专用——
+     * 从 {@link RequestContext} 取登录态 userId，委托 {@link #changePassword(Long, ChangePasswordCommand)}。
      *
      * @throws DomainException PASSWORD_INCORRECT (旧密码错误) / PASSWORD_SAME_AS_OLD (新旧相同)
      */
     public void changePassword(ChangePasswordCommand command) {
-        Long userId = RequestContext.getUserId();
+        changePassword(RequestContext.getUserId(), command);
+    }
+
+    /**
+     * 修改指定用户密码（验证旧密码；改后踢出所有会话）。签名服务
+     * （{@code POST /api/account/{userId}/change-password}）专用——签名路径下
+     * {@link RequestContext#getUserId()} 为 null（无终端用户登录态，只有调用方 appName），
+     * 故 userId 由 controller 从 path 传入，而非读 RequestContext。
+     *
+     * @param userId  目标用户 ID（签名路径下由 path 提供，非 RequestContext）
+     * @param command 旧 / 新明文密码
+     * @throws DomainException USER_NOT_FOUND（userId 无对应账号）
+     * @throws DomainException PASSWORD_INCORRECT (旧密码错误) / PASSWORD_SAME_AS_OLD (新旧相同)
+     */
+    public void changePassword(Long userId, ChangePasswordCommand command) {
         Account account = accountRepository.findById(userId)
             .orElseThrow(() -> new DomainException(AccountError.USER_NOT_FOUND));
 
