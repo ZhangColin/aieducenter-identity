@@ -98,5 +98,16 @@ class CaptchaFlowIntegrationTest extends IdentityIntegrationTestBase {
         assertThat(redisTemplate.hasKey(CAPTCHA_KEY_PREFIX + captcha.id())).isFalse();
     }
 
+    @Test
+    void given_sms_without_captcha_when_send_sms_then_400() throws Exception {
+        // SSO 浏览器闭环仍强制图形码（防脚本轰炸）——即使 verification AppService 把图形码校验改成
+        // 「提供方才校验」（#62 给签名服务开的可选口子），SSO 这条路经 @Valid + SendSmsCodeCommand.@NotBlank
+        // 在 controller 边界挡下缺图形码的请求 → 400。本测试守住这条不变式（#62 回归点）。
+        mvc.perform(post("/api/sso/verification-code/sms")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"phone\":\"" + PHONE + "\",\"purpose\":\"REGISTER\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
     private record CaptchaInfo(String id, String code) {}
 }

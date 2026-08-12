@@ -1,6 +1,7 @@
 package com.aieducenter.aieducenteridentity.sso.endpoints.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,7 +52,7 @@ public class SsoVerificationCodeController {
 
     @PostMapping("/sms")
     @Operation(summary = "发送短信验证码", description = "需图形码（captchaId/captchaCode，防轰炸）+ purpose；限流 per phone+ip")
-    public ApiResponse<SendCodeResponse> sendSmsVerificationCode(@RequestBody SendSmsCodeCommand command,
+    public ApiResponse<SendCodeResponse> sendSmsVerificationCode(@Valid @RequestBody SendSmsCodeCommand command,
             HttpServletRequest request) {
         String ip = IpUtil.getClientIp(request);
         return ApiResponse.ok(verificationCodeAppService.sendSmsVerificationCode(command, ip));

@@ -147,8 +147,12 @@ public class VerificationCodeAppService {
         // 1. 校验手机号格式
         validatePhoneFormat(command.phone());
 
-        // 校验图形验证码
-        captchaAppService.verifyCaptcha(command.captchaId(), command.captchaCode());
+        // 校验图形验证码：提供方才校验。签名服务路径（#62）图形码可选——调用方可信、防轰炸靠限流
+        // （per apiKey + per target），不强制图形码；SSO 浏览器闭环经 SsoVerificationCodeController
+        // 的 @Valid + SendSmsCodeCommand.@NotBlank 强制必带，到这里时 captchaId 必非空。
+        if (command.captchaId() != null && !command.captchaId().isBlank()) {
+            captchaAppService.verifyCaptcha(command.captchaId(), command.captchaCode());
+        }
 
         // 2. 校验 purpose
         VerificationPurpose purpose = validatePurpose(command.purpose());
