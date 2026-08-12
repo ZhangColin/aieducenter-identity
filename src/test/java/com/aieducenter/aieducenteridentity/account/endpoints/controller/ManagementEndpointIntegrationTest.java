@@ -1,10 +1,13 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,9 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.AccountOperationLog;
+import com.aieducenter.aieducenteridentity.account.domain.aggregate.Profile;
 import com.aieducenter.aieducenteridentity.account.domain.enums.AccountStatus;
 import com.aieducenter.aieducenteridentity.account.domain.enums.OperationType;
 import com.aieducenter.aieducenteridentity.account.domain.repository.AccountOperationLogRepository;
+import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
 import com.aieducenter.aieducenteridentity.test.TestSignatureHelper;
 import com.aieducenter.aieducenteridentity.test.WireMockAppRegistryConfig;
@@ -24,7 +29,8 @@ import com.cartisan.test.base.ApiTestAssertions;
 
 /**
  * 后台管理 gate + 管理端点集成测试（{@code GET /api/account/{userId}/management}（#67）/
- * {@code POST /api/account/{userId}/disable}（#68）/ {@code activate}·{@code unlock}·{@code sessions/revoke}（#69））。
+ * {@code POST /api/account/{userId}/disable}（#68）/ {@code activate}·{@code unlock}·{@code sessions/revoke}（#69）/
+ * {@code GET /api/account} 用户搜索（#70，首次启用 Specification/Pageable））。
  *
  * <p>一条缝贯穿 签名 filter → {@code SignatureVerificationInterceptor}（401 认证）→
  * {@code ManagementCallerInterceptor}（403 白名单）→ controller → {@code AccountManagementAppService}
@@ -61,10 +67,21 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
     @Autowired
     private AccountOperationLogRepository operationLogRepository;
 
+    @Autowired
+    private ProfileRepository profileRepository;
+
     /** 带 5 个合法签名头 GET（指定 signer）。 */
     private MockHttpServletRequestBuilder signedGet(String path, TestSignatureHelper signer) {
         MockHttpServletRequestBuilder req = get(path);
         signer.sign(null).forEach(req::header);
+        return req;
+    }
+
+    /** 带 5 个合法签名头 GET + query 参数（指定 signer）——query 不计入签名（framework queryParams 恒空）。 */
+    private MockHttpServletRequestBuilder signedGetParams(String path, Map<String, String> params,
+            TestSignatureHelper signer) {
+        MockHttpServletRequestBuilder req = signedGet(path, signer);
+        params.forEach(req::param);
         return req;
     }
 
@@ -347,5 +364,169 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
 
         // 未办理：无审计
         assertThat(operationLogRepository.findAll()).isEmpty();
+    }
+
+    // ========== #70：GET /api/account（用户搜索，分页多条件，首次启用 Specification/Pageable）==========
+
+    @Test
+    void given_email_filter_when_search_then_returns_only_matching_accounts_with_paged_shape() throws Exception {
+        createEmailAccount("alpha-search@example.com", PASSWORD);
+        createEmailAccount("beta-search@example.com", PASSWORD);
+        createEmailAccount("gamma-other@example.com", PASSWORD);
+
+        // email INNER_LIKE：3 个里命中含 "search" 的 2 个；page/size/total/items 形状齐
+        mvc.perform(signedGetParams("/api/account", Map.of("email", "search"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(2))
+            .andExpect(jsonPath("$.data.items.length()").value(2))
+            .andExpect(jsonPath("$.data.page").value(1)) // 0-based page=0 → 1-based
+            .andExpect(jsonPath("$.data.size").value(20)) // @PageableDefault 默认 size
+            .andExpect(jsonPath("$.data.items[*].email",
+                containsInAnyOrder("alpha-search@example.com", "beta-search@example.com")));
+
+        // 读操作不审计：搜索不留任何操作流水
+        assertThat(operationLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void given_status_filter_when_search_then_returns_only_disabled() throws Exception {
+        Long active = createEmailAccount("status-active@example.com", PASSWORD);
+        Long disabled = createEmailAccount("status-disabled@example.com", PASSWORD);
+        Account toDisable = accountRepository.findById(disabled).orElseThrow();
+        toDisable.disable();
+        accountRepository.save(toDisable);
+        assertThat(accountRepository.findById(active).orElseThrow().getStatus()).isEqualTo(AccountStatus.ACTIVE);
+
+        // status=0（DISABLED，BaseEnum 按 code 绑定）→ 只回被封的那个
+        mvc.perform(signedGetParams("/api/account", Map.of("status", "0"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.items[0].userId").value(disabled))
+            .andExpect(jsonPath("$.data.items[0].status").value(0));
+    }
+
+    @Test
+    void given_locked_filter_when_search_then_returns_only_locked() throws Exception {
+        Long unlocked = createEmailAccount("locked-false@example.com", PASSWORD);
+        Long locked = createEmailAccount("locked-true@example.com", PASSWORD);
+        Account toLock = accountRepository.findById(locked).orElseThrow();
+        toLock.lock();
+        accountRepository.save(toLock);
+        assertThat(accountRepository.findById(unlocked).orElseThrow().isLocked()).isFalse();
+
+        // locked=true → 只回被锁的那个（不传 locked 即不过滤）
+        mvc.perform(signedGetParams("/api/account", Map.of("locked", "true"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.items[0].userId").value(locked))
+            .andExpect(jsonPath("$.data.items[0].locked").value(true));
+    }
+
+    @Test
+    void given_userId_filter_when_search_then_returns_that_user_with_profile_nickname() throws Exception {
+        Long target = createEmailAccount("by-userid@example.com", PASSWORD);
+        createEmailAccount("by-userid-other@example.com", PASSWORD);
+        // 给 target 建一份 Profile——验证列表项批量补取 profile（nickname 入项）
+        profileRepository.save(Profile.create(target, "target-nick", null));
+
+        // userId（EQUAL，propName=id）→ 只回 target；且带出 profile 的 nickname
+        mvc.perform(signedGetParams("/api/account", Map.of("userId", String.valueOf(target)), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.items[0].userId").value(target))
+            .andExpect(jsonPath("$.data.items[0].nickname").value("target-nick"));
+    }
+
+    @Test
+    void given_created_range_when_search_then_broad_includes_and_past_excludes() throws Exception {
+        createEmailAccount("range@example.com", PASSWORD);
+
+        // 宽区间（2000 ~ 2099）含「现在」建号的账号 → 命中 1
+        mvc.perform(signedGetParams("/api/account",
+                Map.of("createdFrom", "2000-01-01T00:00:00", "createdTo", "2099-12-31T23:59:59"),
+                adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.items[0].email").value("range@example.com"));
+
+        // 过去上界（createdTo=2000）→ 账号都建在「现在」之后 → 0
+        mvc.perform(signedGetParams("/api/account",
+                Map.of("createdTo", "2000-01-01T00:00:00"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(0))
+            .andExpect(jsonPath("$.data.items.length()").value(0));
+    }
+
+    @Test
+    void given_combined_email_and_status_when_search_then_intersects() throws Exception {
+        createEmailAccount("combo-active@example.com", PASSWORD); // email 命中 + ACTIVE
+        Long disabled = createEmailAccount("combo-disabled@example.com", PASSWORD); // email 命中 + DISABLED
+        Account toDisable = accountRepository.findById(disabled).orElseThrow();
+        toDisable.disable();
+        accountRepository.save(toDisable);
+
+        // email=combo AND status=0（DISABLED）→ 交集只回 combo-disabled
+        mvc.perform(signedGetParams("/api/account",
+                Map.of("email", "combo", "status", "0"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.items[0].email").value("combo-disabled@example.com"))
+            .andExpect(jsonPath("$.data.items[0].status").value(0));
+    }
+
+    @Test
+    void given_pagination_when_search_then_returns_correct_slices_and_total() throws Exception {
+        createEmailAccount("page-1@example.com", PASSWORD);
+        createEmailAccount("page-2@example.com", PASSWORD);
+        createEmailAccount("page-3@example.com", PASSWORD);
+
+        // 共 3 个，size=2：第一页 2 项 / total=3 / page=1（1-based）
+        mvc.perform(signedGetParams("/api/account",
+                Map.of("email", "page", "page", "0", "size", "2"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(3))
+            .andExpect(jsonPath("$.data.items.length()").value(2))
+            .andExpect(jsonPath("$.data.page").value(1))
+            .andExpect(jsonPath("$.data.size").value(2));
+
+        // 第二页 1 项 / total=3 / page=2
+        mvc.perform(signedGetParams("/api/account",
+                Map.of("email", "page", "page", "1", "size", "2"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(3))
+            .andExpect(jsonPath("$.data.items.length()").value(1))
+            .andExpect(jsonPath("$.data.page").value(2));
+    }
+
+    @Test
+    void given_no_match_or_page_out_of_bounds_when_search_then_empty_page_200() throws Exception {
+        createEmailAccount("empty@example.com", PASSWORD);
+
+        // 无命中 → 空页（items=[]、total=0），不报错（200）
+        mvc.perform(signedGetParams("/api/account", Map.of("email", "zzz-no-such"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(0))
+            .andExpect(jsonPath("$.data.items.length()").value(0));
+
+        // 分页越界（1 个账号却取第 100 页）→ 空页（items=[]、total 仍 1），不报错（200）
+        mvc.perform(signedGetParams("/api/account",
+                Map.of("page", "99", "size", "2"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.items.length()").value(0));
+    }
+
+    @Test
+    void given_non_admin_console_signature_or_no_signature_when_search_then_403_then_401() throws Exception {
+        createEmailAccount("gate@example.com", PASSWORD);
+
+        // 签名有效（过 401 认证 gate），但调用方非白名单 → 403
+        mvc.perform(signedGetParams("/api/account", Map.of("email", "gate"), signedCallerSigner))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value(403));
+
+        // 无签名头 → 签名 gate 回 401（白名单 403 之前）
+        mvc.perform(get("/api/account").param("email", "gate"))
+            .andExpect(status().isUnauthorized());
     }
 }

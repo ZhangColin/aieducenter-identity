@@ -1,8 +1,16 @@
 package com.aieducenter.aieducenteridentity.account.application;
 
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.aieducenter.aieducenteridentity.account.application.dto.query.AccountSearchQuery;
 import com.aieducenter.aieducenteridentity.account.application.dto.response.AccountManagementView;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
 import com.aieducenter.aieducenteridentity.account.domain.aggregate.AccountOperationLog;
@@ -14,6 +22,8 @@ import com.aieducenter.aieducenteridentity.account.domain.repository.AccountRepo
 import com.aieducenter.aieducenteridentity.account.domain.repository.ProfileRepository;
 import com.cartisan.core.context.RequestContext;
 import com.cartisan.core.exception.DomainException;
+import com.cartisan.data.jpa.specification.ConditionSpecifications;
+import com.cartisan.web.response.PageResponse;
 
 /**
  * 账号管理应用服务——后台管理（admin-console）经签名服务对终端用户 Account 的统一管理入口
@@ -36,7 +46,15 @@ import com.cartisan.core.exception.DomainException;
  *   <li>{@code activate}（#69）：解封，不改会话，reason 可空。</li>
  *   <li>{@code unlock}（#69）：解锁，不改会话，reason 可空。</li>
  *   <li>{@code revokeSessions}（#69）：独立踢人，不改状态，reason 可空。</li>
+ *   <li>{@code search}（#70）：用户搜索（分页多条件），只读、不审计。</li>
  * </ul>
+ *
+ * <h3>用户搜索（#70）</h3>
+ * <p>首次启用 {@code BaseRepository} 自带的 {@code JpaSpecificationExecutor} + {@code findAll(Specification, Pageable)}：
+ * 由 {@link ConditionSpecifications#fromAnnotation(AccountSearchQuery)} 把 {@link AccountSearchQuery}
+ * 的 {@code @Condition} 字段拼成 AND 组合 Specification，再分页查。软删除自动过滤（Hibernate restriction
+ * contributor，Specification 查询亦生效）。结果投影成 {@link AccountManagementView}（与单账号管理详情同口径），
+ * profile 按 userId 批量补取（避免 N+1）。读操作不审计。</p>
  *
  * @since 0.1.0
  */
@@ -76,6 +94,41 @@ public class AccountManagementAppService {
             .orElseThrow(() -> new DomainException(AccountError.USER_NOT_FOUND));
         Profile profile = profileRepository.findById(account.getId()).orElse(null);
         return AccountManagementView.of(account, profile);
+    }
+
+    /**
+     * 搜索账号（分页多条件）——后台管理视图（#70）。
+     *
+     * <p>由 {@link ConditionSpecifications#fromAnnotation(AccountSearchQuery)} 把 {@link AccountSearchQuery}
+     * 的 {@code @Condition} 字段拼成 AND 组合 {@link Specification}，调 {@code findAll(spec, pageable)} 分页查
+     *（首次启用 BaseRepository 自带的 JpaSpecificationExecutor + {@code findAll(Pageable)}，#70）。
+     * 不传的字段自动跳过（不过滤），读操作不审计。软删除自动过滤。</p>
+     *
+     * <p>结果投影成 {@link AccountManagementView}（与 {@link #managementDetail} 同口径）；profile 按本页 userId
+     * 批量补取（{@code findAllById}，避免逐条 N+1），缺 profile 的账号 nickname/avatar 为 null。
+     * 无结果 / 分页越界 → 空页（Spring Data {@code findAll} 行为，不报错）。</p>
+     *
+     * @param query    多条件查询（null / 空串字段即不过滤，多字段 AND 组合）
+     * @param pageable 分页（page 0-based / size；越界返回空页）
+     * @return 分页管理视图（items / total / page（1-based）/ size）
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AccountManagementView> search(AccountSearchQuery query, Pageable pageable) {
+        Specification<Account> spec = ConditionSpecifications.fromAnnotation(query);
+        Page<Account> page = accountRepository.findAll(spec, pageable);
+
+        List<Long> userIds = page.getContent().stream().map(Account::getId).toList();
+        Map<Long, Profile> profiles = userIds.isEmpty()
+            ? Map.of()
+            : profileRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(Profile::getUserId, profile -> profile));
+
+        List<AccountManagementView> items = page.getContent().stream()
+            .map(account -> AccountManagementView.of(account, profiles.get(account.getId())))
+            .toList();
+
+        return new PageResponse<>(items, page.getTotalElements(),
+            pageable.getPageNumber() + 1, pageable.getPageSize());
     }
 
     /**
