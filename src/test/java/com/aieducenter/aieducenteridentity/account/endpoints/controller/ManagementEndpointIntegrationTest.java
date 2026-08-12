@@ -1,27 +1,41 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.aieducenter.aieducenteridentity.account.domain.aggregate.Account;
+import com.aieducenter.aieducenteridentity.account.domain.aggregate.AccountOperationLog;
+import com.aieducenter.aieducenteridentity.account.domain.enums.AccountStatus;
+import com.aieducenter.aieducenteridentity.account.domain.enums.OperationType;
+import com.aieducenter.aieducenteridentity.account.domain.repository.AccountOperationLogRepository;
 import com.aieducenter.aieducenteridentity.test.IdentityIntegrationTestBase;
 import com.aieducenter.aieducenteridentity.test.TestSignatureHelper;
 import com.aieducenter.aieducenteridentity.test.WireMockAppRegistryConfig;
 import com.cartisan.test.base.ApiTestAssertions;
 
 /**
- * 后台管理 gate + 管理详情端点集成测试（{@code GET /api/account/{userId}/management}，#67）。
+ * 后台管理 gate + 管理端点集成测试（{@code GET /api/account/{userId}/management}（#67）/
+ * {@code POST /api/account/{userId}/disable}（#68））。
  *
  * <p>一条缝贯穿 签名 filter → {@code SignatureVerificationInterceptor}（401 认证）→
  * {@code ManagementCallerInterceptor}（403 白名单）→ controller → {@code AccountManagementAppService}
- * → 聚合 → DB。照搬 {@code SignedAccountControllerIntegrationTest} 的真签名范式（MockMvc +
+ * → 聚合 → DB（+ Redis 踢人）。照搬 {@code SignedAccountControllerIntegrationTest} 的真签名范式（MockMvc +
  * Testcontainers 真 PG/Redis + WireMock app-registry），复用 {@link IdentityIntegrationTestBase}。</p>
  *
- * <p>三入口：admin-console 签名（白名单内）→ 200；普通签名调用方（白名单外）→ 403；未签名 → 401。</p>
+ * <p>读端点三入口（#67）：admin-console 签名（白名单内）→ 200；普通签名调用方（白名单外）→ 403；未签名 → 401。</p>
+ *
+ * <p>封号端点（#68）额外验：disable → status=DISABLED + 该用户所有 SSO 会话清（Redis 踢人）+ 审计落一行
+ * （operator 取 {@code X-User-Id/X-User-Name} 头经 {@code RequestContext} 还原 / target / op_type=DISABLE /
+ * reason）；reason 缺失 → 400 不办理（且不落审计、不改状态）。</p>
  *
  * @since 0.1.0
  */
@@ -40,10 +54,25 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
         WireMockAppRegistryConfig.SIGNED_CALLER_API_KEY,
         WireMockAppRegistryConfig.SIGNED_CALLER_API_SECRET);
 
+    @Autowired
+    private AccountOperationLogRepository operationLogRepository;
+
     /** 带 5 个合法签名头 GET（指定 signer）。 */
     private MockHttpServletRequestBuilder signedGet(String path, TestSignatureHelper signer) {
         MockHttpServletRequestBuilder req = get(path);
         signer.sign(null).forEach(req::header);
+        return req;
+    }
+
+    /** 带 5 个合法签名头 POST JSON（指定 signer）；operator 身份经 X-User-Id/X-User-Name 头透传。 */
+    private MockHttpServletRequestBuilder signedPost(String path, String body, TestSignatureHelper signer,
+            Long operatorUserId, String operatorName) {
+        MockHttpServletRequestBuilder req = post(path)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body)
+            .header("X-User-Id", String.valueOf(operatorUserId))
+            .header("X-User-Name", operatorName);
+        signer.sign(body).forEach(req::header);
         return req;
     }
 
@@ -79,5 +108,105 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
         // 无签名头 → 签名 gate 回 401（非白名单 403 之前）
         mvc.perform(get("/api/account/" + userId + "/management"))
             .andExpect(status().isUnauthorized());
+    }
+
+    // ========== #68：POST /{userId}/disable（封号，含自动踢人 + 审计）==========
+
+    /**
+     * 辅助：取本测试（@Transactional 回滚隔离）写入的审计行——按 target 过滤，跨测试无串扰。
+     */
+    private AccountOperationLog auditFor(Long targetUserId) {
+        return operationLogRepository.findAll().stream()
+            .filter(log -> log.getTargetUserId().equals(targetUserId))
+            .reduce((a, b) -> b) // 万一多行取最后一条
+            .orElseThrow();
+    }
+
+    @Test
+    void given_admin_console_signature_when_disable_then_status_disabled_and_sessions_cleared_and_audit_logged()
+            throws Exception {
+        String email = "disable-sig@example.com";
+        Long userId = createEmailAccount(email, PASSWORD);
+        Long operatorId = 9001L;
+        String operatorName = "alice";
+        String reason = "违规内容，多次警告";
+
+        // 预置一个 SSO 会话（disable 应自动踢人——清该 userId 所有 SSO 会话）
+        String sessionId = createSsoSession(userId, "用户").sessionId();
+        assertThat(sessionRepository.findActive(sessionId)).isPresent();
+
+        String body = "{\"reason\":\"" + reason + "\"}";
+
+        mvc.perform(signedPost("/api/account/" + userId + "/disable", body, adminConsoleSigner, operatorId,
+                operatorName))
+            .andExpect(status().isNoContent());
+
+        // AC①：status=DISABLED
+        Account account = accountRepository.findById(userId).orElseThrow();
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.DISABLED);
+
+        // AC②：该用户所有 SSO 会话被清（Redis 踢人）
+        assertThat(sessionRepository.findActive(sessionId)).isEmpty();
+
+        // AC③：account_operation_log 落一行——operator（RequestContext）/ target / op_type=DISABLE / reason
+        AccountOperationLog log = auditFor(userId);
+        assertThat(log.getOpType()).isEqualTo(OperationType.DISABLE);
+        assertThat(log.getTargetUserId()).isEqualTo(userId);
+        assertThat(log.getReason()).isEqualTo(reason);
+        assertThat(log.getOperatorCaller()).isEqualTo(WireMockAppRegistryConfig.ADMIN_CONSOLE_APP_NAME);
+        assertThat(log.getOperatorUserId()).isEqualTo(operatorId);
+        assertThat(log.getOperatorUserName()).isEqualTo(operatorName);
+        assertThat(log.getOccurredAt()).isNotNull();
+    }
+
+    @Test
+    void given_non_admin_console_signature_when_disable_then_returns_403_and_no_side_effects() throws Exception {
+        Long userId = createEmailAccount("disable-403@example.com", PASSWORD);
+
+        // 签名有效（过 401 认证 gate），但调用方非白名单 → 403
+        mvc.perform(signedPost("/api/account/" + userId + "/disable", "{\"reason\":\"x\"}", signedCallerSigner,
+                9002L, "bob"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value(403));
+
+        // 未办理：状态未变、无审计
+        assertThat(accountRepository.findById(userId).orElseThrow().getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(operationLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void given_no_signature_when_disable_then_returns_401() throws Exception {
+        Long userId = createEmailAccount("disable-401@example.com", PASSWORD);
+
+        // 无签名头 → 签名 gate 回 401（白名单 403 之前）
+        mvc.perform(post("/api/account/" + userId + "/disable")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"x\"}"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void given_admin_console_signature_but_reason_missing_when_disable_then_returns_400_and_no_side_effects()
+            throws Exception {
+        Long userId = createEmailAccount("disable-noreason@example.com", PASSWORD);
+
+        // reason 缺失 → 400（@NotBlank），不办理
+        mvc.perform(signedPost("/api/account/" + userId + "/disable", "{}", adminConsoleSigner, 9003L, "carol"))
+            .andExpect(status().isBadRequest())
+            .andExpect(ApiTestAssertions.assertError(400));
+
+        // 未办理：状态未变、无审计
+        assertThat(accountRepository.findById(userId).orElseThrow().getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(operationLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void given_admin_console_signature_but_unknown_user_when_disable_then_returns_404() throws Exception {
+        // 不存在的 userId → 404 USER_NOT_FOUND（标准 ApiResponse，非 OIDC {error}）
+        mvc.perform(signedPost("/api/account/99999999999/disable", "{\"reason\":\"x\"}", adminConsoleSigner, 9004L,
+                "dave"))
+            .andExpect(status().isNotFound())
+            .andExpect(ApiTestAssertions.assertError(404))
+            .andExpect(jsonPath("$.error").doesNotExist());
     }
 }

@@ -19,6 +19,7 @@ import com.aieducenter.aieducenteridentity.account.application.AccountSubjectApp
 import com.aieducenter.aieducenteridentity.account.application.dto.command.AuthenticateByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.AuthenticateCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ChangePasswordCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.command.DisableAccountCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordCommand;
@@ -174,5 +175,18 @@ public class SignedAccountController {
             + "未签名 → 401（签名 gate）。userId 无对应账号 → 404 USER_NOT_FOUND。")
     public ApiResponse<AccountManagementView> getManagementDetail(@PathVariable Long userId) {
         return ApiResponse.ok(managementAppService.managementDetail(userId));
+    }
+
+    @PostMapping("/{userId}/disable")
+    @RequireManagementCaller
+    @Operation(summary = "封号（停用账号）",
+        description = "admin-console 签名调用方封号（reason 必填）：状态置 DISABLED + 自动清该用户所有 SSO 会话（踢人）"
+            + "+ 同步落审计 op_type=DISABLE（operator 取 RequestContext）。成功 → 204；reason 缺失 → 400（不办理）；"
+            + "userId 无对应账号 → 404 USER_NOT_FOUND。@RequireManagementCaller 白名单 gate：非白名单签名 → 403；"
+            + "未签名 → 401（签名 gate）。委托 AccountManagementAppService.disable（复用 AccountStatusAppService.disable）。")
+    public ResponseEntity<Void> disable(@PathVariable Long userId,
+            @Valid @RequestBody DisableAccountCommand command) {
+        managementAppService.disable(userId, command.reason());
+        return ResponseEntity.noContent().build();
     }
 }
