@@ -26,9 +26,17 @@ import com.cartisan.core.exception.DomainException;
  *
  * <h3>状态变更编排（#68 起）</h3>
  * <p>复用既有应用服务原语（{@link AccountStatusAppService} 等含自动踢人）+ 同事务 append 审计——本服务作
- * 编排入口：动作主流程（封号/踢人/改密…）+ 审计落库同事务（审计失败回滚动作，强一致）。审计 operator
+ * 编排入口：动作主流程（封号/解封/解锁/踢人/改密…）+ 审计落库同事务（审计失败回滚动作，强一致）。审计 operator
  * 取 {@code RequestContext.getCallerAppName()/getUserId()/getUserName()}（语义：operator = 运营人员，
  * 非 target 终端用户，见 ADR-0010）。</p>
+ *
+ * <h3>动作清单</h3>
+ * <ul>
+ *   <li>{@code disable}（#68）：封号 + 自动踢人，reason 必填。</li>
+ *   <li>{@code activate}（#69）：解封，不改会话，reason 可空。</li>
+ *   <li>{@code unlock}（#69）：解锁，不改会话，reason 可空。</li>
+ *   <li>{@code revokeSessions}（#69）：独立踢人，不改状态，reason 可空。</li>
+ * </ul>
  *
  * @since 0.1.0
  */
@@ -38,13 +46,16 @@ public class AccountManagementAppService {
     private final AccountRepository accountRepository;
     private final ProfileRepository profileRepository;
     private final AccountStatusAppService statusAppService;
+    private final SsoSessionRevoker sessionRevoker;
     private final AccountOperationLogRepository operationLogRepository;
 
     public AccountManagementAppService(AccountRepository accountRepository, ProfileRepository profileRepository,
-            AccountStatusAppService statusAppService, AccountOperationLogRepository operationLogRepository) {
+            AccountStatusAppService statusAppService, SsoSessionRevoker sessionRevoker,
+            AccountOperationLogRepository operationLogRepository) {
         this.accountRepository = accountRepository;
         this.profileRepository = profileRepository;
         this.statusAppService = statusAppService;
+        this.sessionRevoker = sessionRevoker;
         this.operationLogRepository = operationLogRepository;
     }
 
@@ -89,6 +100,59 @@ public class AccountManagementAppService {
     public void disable(Long userId, String reason) {
         statusAppService.disable(userId);
         appendOperationLog(userId, OperationType.DISABLE, reason);
+    }
+
+    /**
+     * 解封（激活账号）——复用 {@link AccountStatusAppService#activate(Long)}（状态置 ACTIVE，不影响会话：
+     * 封号时已清，用户需重新登录），同事务 append 审计 op_type=ACTIVATE。
+     *
+     * <p>与封号对称：activate/unlock 不带踢人（封号/锁定时已清会话），仅改账号状态。{@code reason} 可空
+     * （低危可逆动作，调用方按需附「申诉成功」等）；operator 取 {@code RequestContext}，target = {@code userId}。</p>
+     *
+     * @param userId 目标用户 ID（被管的终端 Account，显式路径参数）
+     * @param reason 操作原因（可空，落审计）
+     * @throws DomainException USER_NOT_FOUND（404，userId 无对应账号）
+     */
+    @Transactional
+    public void activate(Long userId, String reason) {
+        statusAppService.activate(userId);
+        appendOperationLog(userId, OperationType.ACTIVATE, reason);
+    }
+
+    /**
+     * 解锁——复用 {@link AccountStatusAppService#unlock(Long)}（locked 置 false，不影响会话），
+     * 同事务 append 审计 op_type=UNLOCK。
+     *
+     * <p>解除系统自动锁定（风控/连续登录失败触发的 lock）；后台只善后解锁，{@code lock}（临时锁定）
+     * 不暴露给后台（ADR-0010）。{@code reason} 可空；operator 取 {@code RequestContext}，target = {@code userId}。</p>
+     *
+     * @param userId 目标用户 ID（被管的终端 Account，显式路径参数）
+     * @param reason 操作原因（可空，落审计）
+     * @throws DomainException USER_NOT_FOUND（404，userId 无对应账号）
+     */
+    @Transactional
+    public void unlock(Long userId, String reason) {
+        statusAppService.unlock(userId);
+        appendOperationLog(userId, OperationType.UNLOCK, reason);
+    }
+
+    /**
+     * 独立踢人——复用 {@link SsoSessionRevoker#revokeQuietly(Long)}（清该 userId 所有 SSO 会话），
+     * <b>不改账号状态</b>，同事务 append 审计 op_type=REVOKE_SESSIONS。
+     *
+     * <p>与封号内的自动踢人区别：封号是「改状态 + 附带踢人」，本方法是「只踢人、不动状态」——用于运营
+     * 单独清退在线会话（如怀疑会话泄露）而不封号。原语 {@code revokeQuietly} 走 Redis、best-effort
+     * （失败仅告警不抛），无在线会话时撤销 0 个亦正常返回。{@code reason} 可空；operator 取
+     * {@code RequestContext}，target = {@code userId}。审计 append 走 DB 事务（与 Redis 踢人无事务联动，
+     * 同 {@link #disable} 的既定取舍）。</p>
+     *
+     * @param userId 目标用户 ID（被管的终端 Account，显式路径参数）
+     * @param reason 操作原因（可空，落审计）
+     */
+    @Transactional
+    public void revokeSessions(Long userId, String reason) {
+        sessionRevoker.revokeQuietly(userId);
+        appendOperationLog(userId, OperationType.REVOKE_SESSIONS, reason);
     }
 
     /**

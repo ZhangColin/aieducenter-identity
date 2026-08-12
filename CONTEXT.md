@@ -265,6 +265,7 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 - [x] 不变式"应用不持有凭据" scope = SSO 浏览器链路（不约束签名服务调用）
 - [x] 后台管理 API（2026-08-12）= admin-console 经签名服务；危险操作加管理调用方白名单（admin-console）过渡 gate；operator 走现成 RequestContext 透传零框架改动；新建 account_operation_log 审计（只写不查）；状态暴露 disable/activate/unlock（lock 不暴露、不定时解封）；登录历史独立工单做满（ADR-0010）
 - [x] 审计基建 + 封号端点（#68）= `account_operation_log` 表（operator 显式取 RequestContext、不借 Auditable，TSID，无软删）+ `OperationType` 枚举（DISABLE 起，后续复用）；`POST /api/account/{userId}/disable`（reason 必填、`@RequireManagementCaller`、复用 `AccountStatusAppService.disable` 封号+踢人、同事务 append 审计）；解封/解锁/踢人随 #69
+- [x] 解封 / 解锁 / 独立踢人端点（#69）= `OperationType` 扩 ACTIVATE/UNLOCK/REVOKE_SESSIONS；`POST /{userId}/activate`·`/{userId}/unlock`·`/{userId}/sessions/revoke`（均 `@RequireManagementCaller`、可选 reason body → 204）；activate/unlock 复用 `AccountStatusAppService`（不改会话）、revoke 复用 `SsoSessionRevoker.revokeQuietly`（不改状态、无会话撤销 0 个不报错），各自同事务 append 审计
 - [ ] namespace 迁移 cookie/public → `/api/sso/*`（#55）
 - [ ] 签名服务 API 落地（#56，前置 #55）
 - [ ] identity-web 个人中心 me/profile/改密（后端就绪、前端未接，#57）

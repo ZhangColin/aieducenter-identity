@@ -20,6 +20,7 @@ import com.aieducenter.aieducenteridentity.account.application.dto.command.Authe
 import com.aieducenter.aieducenteridentity.account.application.dto.command.AuthenticateCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ChangePasswordCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.DisableAccountCommand;
+import com.aieducenter.aieducenteridentity.account.application.dto.command.ManagementReasonCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.RegisterByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordByCodeCommand;
 import com.aieducenter.aieducenteridentity.account.application.dto.command.ResetPasswordCommand;
@@ -51,7 +52,10 @@ import jakarta.validation.Valid;
  * （{@code authenticate-by-code} / {@code register} / {@code reset-password}）；#60 加按 userId / identifier
  * 读三端点（{@code GET {userId}} / {@code GET {userId}/profile} / {@code GET /find}）；#61 加按 userId 写两端点
  * （{@code PUT {userId}/profile} / {@code POST {userId}/change-password}）——签名路径下 {@code RequestContext.getUserId()}
- * 为 null，故走 AppService 的 userId 参数版本（非 cookie 版 {@code updateCurrentProfile} / {@code changePassword}）。</p>
+ * 为 null，故走 AppService 的 userId 参数版本（非 cookie 版 {@code updateCurrentProfile} / {@code changePassword}）。
+ * #67 起后台管理（admin-console）端点加 {@code @RequireManagementCaller} 白名单 gate：#67 管理详情读、
+ * #68 封号（{@code POST {userId}/disable}，reason 必填）、#69 解封 / 解锁 / 独立踢人（{@code activate} /
+ * {@code unlock} / {@code sessions/revoke}，reason 可选）。</p>
  *
  * @since 0.1.0
  */
@@ -187,6 +191,46 @@ public class SignedAccountController {
     public ResponseEntity<Void> disable(@PathVariable Long userId,
             @Valid @RequestBody DisableAccountCommand command) {
         managementAppService.disable(userId, command.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{userId}/activate")
+    @RequireManagementCaller
+    @Operation(summary = "解封（激活账号）",
+        description = "admin-console 签名调用方解封账号：状态置 ACTIVE（不改会话——封号时已清，用户需重新登录）"
+            + "+ 同步落审计 op_type=ACTIVATE。成功 → 204；userId 无对应账号 → 404 USER_NOT_FOUND。"
+            + "reason 可选（空 body 亦可）。@RequireManagementCaller 白名单 gate：非白名单签名 → 403；"
+            + "未签名 → 401（签名 gate）。委托 AccountManagementAppService.activate（复用 AccountStatusAppService.activate）。")
+    public ResponseEntity<Void> activate(@PathVariable Long userId,
+            @Valid @RequestBody(required = false) ManagementReasonCommand command) {
+        managementAppService.activate(userId, ManagementReasonCommand.reasonOrNull(command));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{userId}/unlock")
+    @RequireManagementCaller
+    @Operation(summary = "解锁",
+        description = "admin-console 签名调用方解锁账号：locked 置 false（解除系统自动锁定，不改会话）+ 同步落审计 "
+            + "op_type=UNLOCK。后台只善后解锁（lock 临时锁定不暴露给后台，ADR-0010）。成功 → 204；"
+            + "userId 无对应账号 → 404 USER_NOT_FOUND。reason 可选。@RequireManagementCaller 白名单 gate："
+            + "非白名单签名 → 403；未签名 → 401。委托 AccountManagementAppService.unlock（复用 AccountStatusAppService.unlock）。")
+    public ResponseEntity<Void> unlock(@PathVariable Long userId,
+            @Valid @RequestBody(required = false) ManagementReasonCommand command) {
+        managementAppService.unlock(userId, ManagementReasonCommand.reasonOrNull(command));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{userId}/sessions/revoke")
+    @RequireManagementCaller
+    @Operation(summary = "独立踢人（清会话）",
+        description = "admin-console 签名调用方清退该用户所有 SSO 会话（独立踢人），<b>不改账号状态</b>"
+            + "+ 同步落审计 op_type=REVOKE_SESSIONS。用于单独清退在线会话（如怀疑会话泄露）而不封号。"
+            + "该用户当前无在线会话 → 撤销 0 个、正常返回 204（不报错）。成功 → 204。reason 可选。"
+            + "@RequireManagementCaller 白名单 gate：非白名单签名 → 403；未签名 → 401。"
+            + "委托 AccountManagementAppService.revokeSessions（复用 SsoSessionRevoker.revokeQuietly，best-effort）。")
+    public ResponseEntity<Void> revokeSessions(@PathVariable Long userId,
+            @Valid @RequestBody(required = false) ManagementReasonCommand command) {
+        managementAppService.revokeSessions(userId, ManagementReasonCommand.reasonOrNull(command));
         return ResponseEntity.noContent().build();
     }
 }

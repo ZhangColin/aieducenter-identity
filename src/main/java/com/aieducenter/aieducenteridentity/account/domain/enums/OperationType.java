@@ -14,13 +14,19 @@ import jakarta.persistence.Converter;
  *
  * <ul>
  *   <li>{@link #DISABLE}：封号（停用账号），原因必填。</li>
+ *   <li>{@link #ACTIVATE}：解封（激活账号，#69）。</li>
+ *   <li>{@link #UNLOCK}：解锁（解除系统自动锁定，#69）。</li>
+ *   <li>{@link #REVOKE_SESSIONS}：独立踢人（清该用户所有 SSO 会话、不改账号状态，#69）。</li>
  * </ul>
  *
  * @since 0.1.0
  */
 public enum OperationType implements BaseEnum<OperationType> {
 
-    DISABLE(1, "封号");
+    DISABLE(1, "封号"),
+    ACTIVATE(2, "解封"),
+    UNLOCK(3, "解锁"),
+    REVOKE_SESSIONS(4, "吊销会话");
 
     private final Integer code;
     private final String name;

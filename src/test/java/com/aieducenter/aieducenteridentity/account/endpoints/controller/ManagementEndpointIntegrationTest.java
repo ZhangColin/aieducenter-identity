@@ -24,7 +24,7 @@ import com.cartisan.test.base.ApiTestAssertions;
 
 /**
  * 后台管理 gate + 管理端点集成测试（{@code GET /api/account/{userId}/management}（#67）/
- * {@code POST /api/account/{userId}/disable}（#68））。
+ * {@code POST /api/account/{userId}/disable}（#68）/ {@code activate}·{@code unlock}·{@code sessions/revoke}（#69））。
  *
  * <p>一条缝贯穿 签名 filter → {@code SignatureVerificationInterceptor}（401 认证）→
  * {@code ManagementCallerInterceptor}（403 白名单）→ controller → {@code AccountManagementAppService}
@@ -36,6 +36,10 @@ import com.cartisan.test.base.ApiTestAssertions;
  * <p>封号端点（#68）额外验：disable → status=DISABLED + 该用户所有 SSO 会话清（Redis 踢人）+ 审计落一行
  * （operator 取 {@code X-User-Id/X-User-Name} 头经 {@code RequestContext} 还原 / target / op_type=DISABLE /
  * reason）；reason 缺失 → 400 不办理（且不落审计、不改状态）。</p>
+ *
+ * <p>解封 / 解锁 / 独立踢人（#69）：activate → status=ACTIVE + 审计 ACTIVATE；unlock → locked=false + 审计 UNLOCK；
+ * sessions/revoke → 该用户 SSO 会话清、不改账号状态 + 审计 REVOKE_SESSIONS；无在线会话 revoke → 204 撤销 0 个不报错；
+ * 非 admin-console 签名 → 三个新端点均 403。</p>
  *
  * @since 0.1.0
  */
@@ -208,5 +212,140 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
             .andExpect(status().isNotFound())
             .andExpect(ApiTestAssertions.assertError(404))
             .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    // ========== #69：POST /{userId}/activate、/{userId}/unlock、/{userId}/sessions/revoke ==========
+
+    @Test
+    void given_admin_console_signature_when_activate_then_status_active_and_audit_logged() throws Exception {
+        Long userId = createEmailAccount("activate@example.com", PASSWORD);
+        Long operatorId = 9101L;
+        String operatorName = "activate-op";
+        String reason = "申诉成功，恢复账号";
+
+        // 预置封号状态（经聚合直接置 DISABLED，不经封号端点——隔离审计，只验 activate 这一行）
+        Account disabled = accountRepository.findById(userId).orElseThrow();
+        disabled.disable();
+        accountRepository.save(disabled);
+        assertThat(disabled.getStatus()).isEqualTo(AccountStatus.DISABLED);
+
+        String body = "{\"reason\":\"" + reason + "\"}";
+
+        mvc.perform(signedPost("/api/account/" + userId + "/activate", body, adminConsoleSigner, operatorId,
+                operatorName))
+            .andExpect(status().isNoContent());
+
+        // AC①：status=ACTIVE
+        assertThat(accountRepository.findById(userId).orElseThrow().getStatus()).isEqualTo(AccountStatus.ACTIVE);
+
+        // 审计 ACTIVATE（operator/target/reason）
+        AccountOperationLog log = auditFor(userId);
+        assertThat(log.getOpType()).isEqualTo(OperationType.ACTIVATE);
+        assertThat(log.getTargetUserId()).isEqualTo(userId);
+        assertThat(log.getReason()).isEqualTo(reason);
+        assertThat(log.getOperatorCaller()).isEqualTo(WireMockAppRegistryConfig.ADMIN_CONSOLE_APP_NAME);
+        assertThat(log.getOperatorUserId()).isEqualTo(operatorId);
+        assertThat(log.getOperatorUserName()).isEqualTo(operatorName);
+    }
+
+    @Test
+    void given_admin_console_signature_when_unlock_then_locked_false_and_audit_logged() throws Exception {
+        Long userId = createEmailAccount("unlock@example.com", PASSWORD);
+        Long operatorId = 9102L;
+        String operatorName = "unlock-op";
+        String reason = "风控误判，解除锁定";
+
+        // 预置锁定状态
+        Account locked = accountRepository.findById(userId).orElseThrow();
+        locked.lock();
+        accountRepository.save(locked);
+        assertThat(locked.isLocked()).isTrue();
+
+        String body = "{\"reason\":\"" + reason + "\"}";
+
+        mvc.perform(signedPost("/api/account/" + userId + "/unlock", body, adminConsoleSigner, operatorId,
+                operatorName))
+            .andExpect(status().isNoContent());
+
+        // AC②：locked=false
+        assertThat(accountRepository.findById(userId).orElseThrow().isLocked()).isFalse();
+
+        // 审计 UNLOCK
+        AccountOperationLog log = auditFor(userId);
+        assertThat(log.getOpType()).isEqualTo(OperationType.UNLOCK);
+        assertThat(log.getTargetUserId()).isEqualTo(userId);
+        assertThat(log.getReason()).isEqualTo(reason);
+        assertThat(log.getOperatorUserName()).isEqualTo(operatorName);
+    }
+
+    @Test
+    void given_admin_console_signature_when_revoke_sessions_then_sessions_cleared_status_unchanged_and_audit_logged()
+            throws Exception {
+        Long userId = createEmailAccount("revoke@example.com", PASSWORD);
+        Long operatorId = 9103L;
+        String operatorName = "revoke-op";
+        String reason = "安全处置，清退在线会话";
+
+        // 预置一个 SSO 会话（revoke 应清空）
+        String sessionId = createSsoSession(userId, "用户").sessionId();
+        assertThat(sessionRepository.findActive(sessionId)).isPresent();
+
+        // 记录初始状态——revoke 不应改账号状态
+        AccountStatus statusBefore = accountRepository.findById(userId).orElseThrow().getStatus();
+
+        String body = "{\"reason\":\"" + reason + "\"}";
+
+        mvc.perform(signedPost("/api/account/" + userId + "/sessions/revoke", body, adminConsoleSigner, operatorId,
+                operatorName))
+            .andExpect(status().isNoContent());
+
+        // AC③：该用户 SSO 会话清空
+        assertThat(sessionRepository.findActive(sessionId)).isEmpty();
+
+        // AC③：不改账号状态
+        assertThat(accountRepository.findById(userId).orElseThrow().getStatus()).isEqualTo(statusBefore);
+
+        // 审计 REVOKE_SESSIONS
+        AccountOperationLog log = auditFor(userId);
+        assertThat(log.getOpType()).isEqualTo(OperationType.REVOKE_SESSIONS);
+        assertThat(log.getTargetUserId()).isEqualTo(userId);
+        assertThat(log.getReason()).isEqualTo(reason);
+        assertThat(log.getOperatorUserName()).isEqualTo(operatorName);
+    }
+
+    @Test
+    void given_admin_console_signature_when_revoke_sessions_and_none_exist_then_204_and_audit_logged()
+            throws Exception {
+        Long userId = createEmailAccount("revoke-none@example.com", PASSWORD);
+        // 该用户当前无在线会话
+
+        mvc.perform(signedPost("/api/account/" + userId + "/sessions/revoke", "{}", adminConsoleSigner, 9104L,
+                "revoke-none-op"))
+            .andExpect(status().isNoContent());
+
+        // AC④：正常撤销 0 个、不报错（已由 204 表明）；审计仍落一行 REVOKE_SESSIONS
+        AccountOperationLog log = auditFor(userId);
+        assertThat(log.getOpType()).isEqualTo(OperationType.REVOKE_SESSIONS);
+        assertThat(log.getTargetUserId()).isEqualTo(userId);
+    }
+
+    @Test
+    void given_non_admin_console_signature_when_activate_unlock_or_revoke_then_returns_403_and_no_side_effects()
+            throws Exception {
+        Long userId = createEmailAccount("mgmt-403-batch@example.com", PASSWORD);
+
+        // 签名有效（过 401 认证 gate），但调用方非白名单 → 三个新端点均 403
+        mvc.perform(signedPost("/api/account/" + userId + "/activate", "{}", signedCallerSigner, 9105L, "x"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value(403));
+        mvc.perform(signedPost("/api/account/" + userId + "/unlock", "{}", signedCallerSigner, 9105L, "x"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value(403));
+        mvc.perform(signedPost("/api/account/" + userId + "/sessions/revoke", "{}", signedCallerSigner, 9105L, "x"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value(403));
+
+        // 未办理：无审计
+        assertThat(operationLogRepository.findAll()).isEmpty();
     }
 }
