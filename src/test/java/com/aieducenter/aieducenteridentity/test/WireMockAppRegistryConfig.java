@@ -30,9 +30,9 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
  *   <li><b>api-keys</b>（#58）：签名服务的可信调用方 stub（{@code GET /api/app-registry/api-keys/{apiKey}}
  *       → {@link ApiKeyInfo}），供 account / verification bc 的 {@code @RequireSignature} 端点集成测试
  *       （配合 {@link TestSignatureHelper}）消费，#58-#62 复用；</li>
- *   <li><b>api-keys（admin-console，#67）</b>：后台管理 BFF 调用方 stub——{@code appName="admin-console"}
- *       与 {@code identity.management.authorized-callers} 白名单同源，供 {@code @RequireManagementCaller}
- *       管理 gate 集成测试消费。</li>
+ *   <li><b>api-keys（admin-console，#67）</b>：后台管理 BFF 调用方 stub——与 app-registry 真实语义对齐
+ *       （{@code apiKey=app_code="admin-console"}、{@code appName=显示名"管理后台"}），供
+ *       {@code @RequireManagementCaller} 管理 gate 集成测试消费。</li>
  * </ul>
  * <p>响应体用真实 {@link ApiResponse#ok} 序列化，保证 code 形态与 app-registry 一致。</p>
  *
@@ -53,11 +53,12 @@ public class WireMockAppRegistryConfig {
     public static final String API_KEYS_PATH = "/api/app-registry/api-keys/" + SIGNED_CALLER_API_KEY;
 
     /**
-     * 后台管理 BFF 调用方（admin-console，#67）——{@code appName="admin-console"} 与
-     * {@code identity.management.authorized-callers} 白名单同源，供管理 gate 集成测试消费。
+     * 后台管理 BFF 调用方（admin-console，#67）——与 app-registry 真实语义对齐：
+     * {@code apiKey = app_code}（"admin-console"，白名单比对的就是它）、
+     * {@code appName = 显示名}（"管理后台"，seed 的 ADMIN_CONSOLE_APP_NAME）。供管理 gate 集成测试消费。
      */
-    public static final String ADMIN_CONSOLE_API_KEY = "admin-console-test-key";
-    public static final String ADMIN_CONSOLE_APP_NAME = "admin-console";
+    public static final String ADMIN_CONSOLE_API_KEY = "admin-console";
+    public static final String ADMIN_CONSOLE_APP_NAME = "管理后台";
     public static final String ADMIN_CONSOLE_API_SECRET = "admin-console-test-secret-32bytes!";
     public static final String ADMIN_CONSOLE_API_KEYS_PATH =
         "/api/app-registry/api-keys/" + ADMIN_CONSOLE_API_KEY;
@@ -99,10 +100,10 @@ public class WireMockAppRegistryConfig {
     }
 
     /**
-     * 注册后台管理 BFF 调用方 stub（#67）：与 {@link #registerSignedCallerStub()} 同形态，仅 appName
-     * 取 {@code "admin-console"}（与 {@code identity.management.authorized-callers} 白名单同源）。
-     * 管理 gate 集成测试以 {@link #ADMIN_CONSOLE_API_KEY} / {@link #ADMIN_CONSOLE_API_SECRET} 打签名，
-     * 框架解析后 {@code RequestContext.getCallerAppName()} 即 "admin-console"。
+     * 注册后台管理 BFF 调用方 stub（#67）：与 {@link #registerSignedCallerStub()} 同形态，字段取
+     * app-registry 真实语义——{@code apiKey=app_code}（白名单比对值）、{@code appName=显示名}（≠app_code，
+     * 防 stub 再把两字段撞成同值掩盖 gate 比对错字段）。管理 gate 集成测试以
+     * {@link #ADMIN_CONSOLE_API_KEY} / {@link #ADMIN_CONSOLE_API_SECRET} 打签名。
      */
     private static void registerAdminConsoleStub() {
         registerApiKeyStub(ADMIN_CONSOLE_API_KEYS_PATH, ADMIN_CONSOLE_API_KEY, ADMIN_CONSOLE_APP_NAME,

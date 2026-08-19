@@ -68,7 +68,8 @@ identity:
       connect-timeout-seconds: 3
       read-timeout-seconds: 5
   # 后台管理 gate（ADR-0010 / #67）——管理端点 @RequireManagementCaller 白名单（过渡 stopgap）。
-  # appName 取 app-registry app_code；默认只放行 admin-console。正式 per-app 权限见 #64。
+  # 比对验签后的 ApiKeyInfo.apiKey()（= app-registry app_code，非显示名）；默认只放行 admin-console。
+  # 正式 per-app 权限见 #64。
   management:
     authorized-callers:
       - admin-console

@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *
  * <p>注册 order 在 cartisan-openapi 的 {@code SignatureVerificationInterceptor}（默认 order 0）<b>之后</b>
  * ——签名 gate 先判认证（401），本 gate 再判管理白名单（403）。与 {@link ManagementCallerInterceptor}
- * 内「callerAppName 为空放行、交签名 gate 回 401」的兜底配合，401 / 403 区分不依赖拦截器顺序。</p>
+ * 内「验签 attribute 缺失放行、交签名 gate 回 401」的兜底配合，401 / 403 区分不依赖拦截器顺序。</p>
  *
  * @since 0.1.0
  */
