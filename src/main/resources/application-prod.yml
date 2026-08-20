@@ -13,7 +13,14 @@ logging.level.root: INFO
 
 # app-registry bootstrap（#30）：prod 必须显式提供 base-url（内网服务地址）
 identity:
+  token:
+    jwt:
+      # issuer 是环境事实（计划生产域名 https://identity.aieducenter.com 只活在 env 值里，不进配置文件）：
+      # 裸 ${} 无默认，env 缺失时未解析字面量由 EnvironmentUrlGuard 启动拦截（fail-fast，#74）
+      issuer: ${IDENTITY_TOKEN_ISSUER}
   sso:
+    # /authorize 未登录 302 登录页（identity-web），prod 走 env、缺失由 guard 启动拦截（同上）
+    login-page-url: ${IDENTITY_SSO_LOGIN_PAGE_URL}
     # 浏览器类端点出错时 302 跳 identity-web 兜底页（ADR-0006，prod 走 env）
     error-page-url: ${IDENTITY_SSO_ERROR_PAGE_URL}
     app-registry:

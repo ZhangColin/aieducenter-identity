@@ -29,6 +29,10 @@ verification:
 
 # 本地联调（issue #16/#27）：.localhost 多域 + identity-web 真实登录页
 identity:
+  token:
+    jwt:
+      # 本机 issuer 真值（#74）：与 demo 消费方所配逐字符一致——discovery 各端点 / iss / 验签 exactMatch 全从它推导
+      issuer: http://identity.localhost:10001
   sso:
     # local 跑 http://*.localhost：Safari/Firefox 不豁免 Secure-over-http（仅 Chrome/Edge 豁免），
     # Secure cookie 会被拒存 → sso_session 落不了地、SSO 会话不持久（issue #36）。故 local 关 Secure；

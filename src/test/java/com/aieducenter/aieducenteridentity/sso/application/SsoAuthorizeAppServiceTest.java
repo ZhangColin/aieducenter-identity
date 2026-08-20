@@ -25,7 +25,14 @@ class SsoAuthorizeAppServiceTest {
     private final SsoClientValidationService clientValidation = mock(SsoClientValidationService.class);
     private final SsoSessionRepository sessionRepository = mock(SsoSessionRepository.class);
     private final AuthorizationCodeAppService codeService = mock(AuthorizationCodeAppService.class);
-    private final SsoProperties properties = new SsoProperties();
+    // loginPageUrl 无 Java 默认值（#74 环境绝对 URL），单测显式给本机值
+    private final SsoProperties properties = newSsoProperties();
+
+    private static SsoProperties newSsoProperties() {
+        SsoProperties properties = new SsoProperties();
+        properties.setLoginPageUrl("http://identity.localhost:10002/login");
+        return properties;
+    }
 
     private final SsoAuthorizeAppService service =
         new SsoAuthorizeAppService(clientValidation, sessionRepository, codeService, properties);

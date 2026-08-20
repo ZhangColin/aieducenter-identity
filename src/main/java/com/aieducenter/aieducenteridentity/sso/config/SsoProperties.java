@@ -40,17 +40,17 @@ public class SsoProperties {
      */
     private boolean cookieSecure = true;
 
-    /** 未登录时 /authorize 302 跳转的登录页 URL（identity-web），透传 authorize 参数。 */
-    private String loginPageUrl = "https://identity.localhost/login";
+    /** 未登录时 /authorize 302 跳转的登录页 URL（identity-web），透传 authorize 参数。环境绝对 URL，无默认值（#74）。 */
+    private String loginPageUrl;
 
     /**
      * 浏览器导航类端点（{@code /authorize}、{@code /logout}）出错时 302 跳转的兜底页 URL（identity-web），
      * 带 {@code ?error&error_description&client_id}（ADR-0006）。
      *
-     * <p><b>取自配置、不取自请求参数</b>——防开放重定向（错误页目标不可由调用方控制）。local 指向 identity-web
-     * {@code /error}，prod 走 env。</p>
+     * <p><b>取自配置、不取自请求参数</b>——防开放重定向（错误页目标不可由调用方控制）。环境绝对 URL、
+     * 无默认值：local 指向 identity-web {@code /error}，prod 走 env（#74）。</p>
      */
-    private String errorPageUrl = "https://identity.localhost/error";
+    private String errorPageUrl;
 
     /** 受 SSO 会话保护的路径（无有效 SSO cookie → 401）。 */
     private List<String> protectedPaths =
@@ -135,8 +135,8 @@ public class SsoProperties {
 
     /** app-registry bootstrap 端点配置（identity 消费 SsoClient facet 的远程入口）。 */
     public static class AppRegistry {
-        /** bootstrap 端点 base-url（如 {@code https://app-registry.aieducenter.com}）；test 指向 WireMock。 */
-        private String baseUrl = "http://localhost:18080";
+        /** bootstrap 端点 base-url（如 {@code https://app-registry.aieducenter.com}）。不带 Java 默认（#74）：base/local 配默认 8088，test 指向 WireMock，prod 走 env。 */
+        private String baseUrl;
 
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }

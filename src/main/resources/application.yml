@@ -39,10 +39,11 @@ cartisan:
 
 # JWT token 配置（ADR-0002 / issue #11）
 # private-key-path / public-key-path 默认不设 → 内存生成临时密钥（重启失效，prod 必须配 PEM）。
+# issuer / 登录页 / 错误页是环境绝对 URL，base 不带默认值——各 profile 显式配本环境真值
+# （local/test 见各 profile；prod 走 env），漏配由 EnvironmentUrlGuard 启动拦截（#74）。
 identity:
   token:
     jwt:
-      issuer: https://identity.aieducenter.com
       access-ttl-seconds: 900
       refresh-ttl-seconds: 604800
       key-id: identity-rs256-v1
@@ -55,16 +56,14 @@ identity:
     code-ttl-seconds: 60                # 授权码 60s 一次性
     cookie-name: sso_session
     cookie-secure: true
-    login-page-url: https://login.company.com/login
-    # 浏览器导航类端点（/authorize /logout）出错时 302 跳转的兜底页（ADR-0006，identity-web /error）
-    error-page-url: https://identity.aieducenter.com/error
+    # login-page-url / error-page-url 同为环境绝对 URL，base 不带（见 identity.token.jwt 注释，#74）
     protected-paths:
       - /api/sso/me
       - /api/sso/profile
       - /api/sso/change-password
     # app-registry bootstrap 端点（#30 消费 SsoClient facet；test 指向 WireMock、prod 走 env）
     app-registry:
-      base-url: ${APP_REGISTRY_BASE_URL:http://localhost:18080}
+      base-url: ${APP_REGISTRY_BASE_URL:http://localhost:8088}
       connect-timeout-seconds: 3
       read-timeout-seconds: 5
   # 后台管理 gate（ADR-0010 / #67）——管理端点 @RequireManagementCaller 白名单（过渡 stopgap）。

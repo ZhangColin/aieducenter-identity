@@ -11,7 +11,8 @@ import lombok.Setter;
 /**
  * JWT token 配置（{@code identity.token.jwt.*}，ADR-0002 / issue #11）。
  *
- * <p>iss / aud 走可配默认值（直登场景无 OAuth client，Phase 2 的 OIDC {@code /token} 再按 client_id 覆盖 aud）。
+ * <p>iss 是环境事实、无默认值——各 profile 显式配本环境真值（漏配由 {@code EnvironmentUrlGuard} 启动拦截，#74）；
+ * aud 走默认值（直登场景无 OAuth client，Phase 2 的 OIDC {@code /token} 再按 client_id 覆盖 aud）。
  * 密钥：{@code privateKeyPath}/{@code publicKeyPath} 都配 PEM 才持久化；否则启动生成临时密钥（重启失效）。</p>
  *
  * @since 0.1.0
@@ -21,8 +22,8 @@ import lombok.Setter;
 @ConfigurationProperties(prefix = "identity.token.jwt")
 public class JwtTokenProperties {
 
-    /** 签发方（iss）。 */
-    private String issuer = "https://identity.aieducenter.com";
+    /** 签发方（iss）。环境绝对 URL，无默认值——各 profile 显式配置（#74）。 */
+    private String issuer;
 
     /** access_token / 会话有效期（秒），默认 15 分钟。 */
     private long accessTtlSeconds = 900;

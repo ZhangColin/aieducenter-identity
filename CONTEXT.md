@@ -159,15 +159,21 @@ account 应用层对外兜出的「已认证身份数据」契约（`SubjectView
 |---|---|---|
 | `app.com/` | 业务前端（SPA 静态） | app.com |
 | `app.com/api/*` · `app.com/auth/callback` | 业务 BFF | app.com |
-| `login.company.com/` | identity-web（SPA 静态） | login.company.com |
-| `login.company.com/authorize` · `/api/*` | identity 后端 | login.company.com（SSO cookie） |
-| `login.company.com/token` · `/userinfo` | identity 后端 | —（机机，不带 cookie） |
+| `identity.aieducenter.com/`（计划生产域名） | identity-web（SPA 静态） | identity.aieducenter.com |
+| `identity.aieducenter.com/authorize` · `/api/*` | identity 后端 | identity.aieducenter.com（SSO cookie） |
+| `identity.aieducenter.com/token` · `/userinfo` | identity 后端 | —（机机，不带 cookie） |
 
 钉死三点：① `/authorize` 与 identity-web **同域**（SSO cookie 才带得上，分域即废）；② `/auth/callback` 是**业务 BFF 端点**（非前端）；③ `/token` **机机直连**（带 client_secret）。`SameSite=Lax`（扛跨站跳转）。
+
+identity.aieducenter.com 是**计划生产域名**（DNS/证书未落地）：只活在文档与未来 prod 部署的 env 值里，**不进任何配置文件**（#74——issuer 是环境事实，配置只放已经为真的值）。
 
 ## 开发测试
 
 - **本地**：`.localhost` 多域——浏览器自动解析到 127.0.0.1 + 当 secure context（免改 hosts、免证书）。端口：identity `identity.localhost:10001`、identity-web 登录页 `identity.localhost:10002`（Next dev，rewrite `/api/*`→:10001）、demo BFF `demo.localhost:10010`、demo-web `demo.localhost:3000`（Next 代理 `/api`·`/auth`→BFF）。一键起：`./dev-up.sh`（PG+Redis+四进程命令）；手册 `docs/guide/local-sso-debugging.md`。
+- **环境 → issuer**（#74：环境绝对 URL 各环境显式配置，base/配置类零默认值，漏配启动即死）：
+  - local：`http://identity.localhost:10001`（application-local.yml 实值，与 demo 消费方所配逐字符一致）
+  - prod：env 驱动——`IDENTITY_TOKEN_ISSUER`（计划值 `https://identity.aieducenter.com`），缺失启动即死
+  - dev：规划未落地（`identity.dev.aieducenter.com`），随部署立项建 profile、无历史包袱
 - **demo 消费方**（仓内 `demo/`：`demo-backend` BFF + `demo-web`）：发起 /authorize + 收 callback + BFF 换 token（内存存、浏览器不接触）+ 显示用户。一身三任：**测试必需品 + 对接活示例 + 演示开发姿态**。
 - ~~**dev 一键登**~~（#16/#27，**已移除**）：原为 identity-web 登录页缺席时的免密兜底；登录页已在、密码登录 local 无摩擦（无验证码 / 图形码），立项理由消失，随限界上下文重构（ADR-0008）整删（`DevLoginAppService` / `DevLoginController` / `DevAccountSeeder` + `identity.sso.dev-login.*` 配置）。local-dev 建号改走真注册 / SQL / 文档化 curl。
 - **dev SSO 环境**（identity.dev.aieducenter.com）：真实 OIDC；redirect_uri 放行 `localhost:*`；预置测试账号 + 一键快速登录；发码通道 = Log（码进日志）；dev 固定码可配（guard 只拦字面 `prod` profile，启用前需部署侧先解决 profile 归属，见 #29 Rollout Notes）。**不做「指定 userId 直接发 token」捷径**。

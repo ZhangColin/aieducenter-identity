@@ -16,3 +16,13 @@ cartisan:
     self:
       api-key: test-identity-key
       api-secret: test-identity-secret
+
+# 环境绝对 URL（#74）：base 不带默认值，test 补齐（issuer 与 local 同一字面量）。
+# 断言全走「配置值 == 返回值」自洽，不依赖具体字面量。
+identity:
+  token:
+    jwt:
+      issuer: http://identity.localhost:10001
+  sso:
+    login-page-url: http://identity.localhost:10002/login
+    error-page-url: http://identity.localhost:10002/error
