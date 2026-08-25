@@ -22,6 +22,7 @@ import com.aieducenter.aieducenteridentity.verification.application.dto.VerifySm
 import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
 import com.cartisan.core.exception.DomainException;
 import com.cartisan.openapi.annotation.RequireSignature;
+import com.cartisan.web.doc.ErrorCodes;
 import com.cartisan.web.response.ApiResponse;
 import com.cartisan.web.util.IpUtil;
 
@@ -48,6 +49,11 @@ import jakarta.validation.Valid;
  *
  * <p>类级 {@code @RequireSignature}：本 controller 所有端点皆需签名（拦截器取方法注解兜类注解）。</p>
  *
+ * <p><b>错误码契约</b>（#77）：约定全文见 {@code SignedAccountController} 类 javadoc（只列业务码，
+ * gate 401/403 与通用参数校验不逐端点声明）。本类特例：{@code verify} 的码错 / 过期 / 已用
+ * <b>不是</b>错误响应（老实降级 {@code valid=false}），故不进其 {@code @ErrorCodes}——只有格式 /
+ * purpose 错抛 400。</p>
+ *
  * @since 0.1.0
  */
 @RestController
@@ -66,8 +72,12 @@ public class SignedVerificationController {
     @PostMapping
     @Operation(summary = "发码（邮箱 / 短信）",
         description = "签名调用方凭 target（EMAIL/SMS）+ value（邮箱 / 手机号）+ purpose 下发验证码，"
-            + "返回 SendCodeResponse。图形码 captchaId/captchaCode 可选——不强制（调用方可信、防轰炸靠限流）。"
+            + "返回 SendCodeResponse。图形码 captchaId/captchaCode 可选——不强制（调用方可信、防轰炸靠限流），"
+            + "SMS 提供则校验（错 → 400）。格式 / purpose 错 → 400；触发限流（per target / per ip）→ 429。"
             + "ip 从请求取（限流 per ip）。")
+    @ErrorCodes({"VERIFICATION_EMAIL_INVALID", "VERIFICATION_PHONE_INVALID", "CAPTCHA_INVALID",
+        "VERIFICATION_PURPOSE_INVALID", "VERIFICATION_RATE_LIMIT_EMAIL", "VERIFICATION_RATE_LIMIT_PHONE",
+        "VERIFICATION_RATE_LIMIT_IP"})
     public ApiResponse<SendCodeResponse> sendCode(@Valid @RequestBody SignedSendCodeRequest request,
             HttpServletRequest httpRequest) {
         String ip = IpUtil.getClientIp(httpRequest);
@@ -86,6 +96,8 @@ public class SignedVerificationController {
         description = "签名调用方凭 target + value + code + purpose 裸验一个验证码，返回 {valid}。"
             + "码对 → valid=true（码即标记已用）；码错 / 过期 / 已用 → valid=false。调用方可信，老实回 valid，"
             + "不搬浏览器防用户枚举。格式 / purpose 错仍抛标准错误（400）。")
+    @ErrorCodes({"VERIFICATION_EMAIL_INVALID", "VERIFICATION_PHONE_INVALID",
+        "VERIFICATION_PURPOSE_INVALID"})
     public ApiResponse<CodeVerificationView> verify(@Valid @RequestBody SignedVerifyCodeRequest request) {
         boolean valid;
         try {
