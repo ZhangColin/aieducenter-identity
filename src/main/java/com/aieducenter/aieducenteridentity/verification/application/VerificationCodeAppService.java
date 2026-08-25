@@ -1,5 +1,6 @@
 package com.aieducenter.aieducenteridentity.verification.application;
 
+import com.aieducenter.aieducenteridentity.shared.error.SharedErrorCode;
 import com.aieducenter.aieducenteridentity.verification.application.dto.SendCodeResponse;
 import com.aieducenter.aieducenteridentity.verification.application.dto.SendEmailCodeCommand;
 import com.aieducenter.aieducenteridentity.verification.application.dto.SendSmsCodeCommand;
@@ -120,7 +121,7 @@ public class VerificationCodeAppService {
             // 验证失败，尝试获取详细错误信息
             var verificationCode = repository.findById(id);
             if (verificationCode.isEmpty()) {
-                throw new DomainException(VerificationCodeError.CODE_INVALID);
+                throw new DomainException(SharedErrorCode.VERIFICATION_CODE_INVALID);
             }
             var code = verificationCode.get();
             if (code.isUsed()) {
@@ -129,7 +130,7 @@ public class VerificationCodeAppService {
             if (java.time.Instant.now().isAfter(code.getExpireAt())) {
                 throw new DomainException(VerificationCodeError.CODE_EXPIRED);
             }
-            throw new DomainException(VerificationCodeError.CODE_INVALID);
+            throw new DomainException(SharedErrorCode.VERIFICATION_CODE_INVALID);
         }
 
         return new VerifyCodeResult(true, "验证码正确");
@@ -214,7 +215,7 @@ public class VerificationCodeAppService {
             // 验证失败，尝试获取详细错误信息
             var verificationCode = repository.findById(id);
             if (verificationCode.isEmpty()) {
-                throw new DomainException(VerificationCodeError.CODE_INVALID);
+                throw new DomainException(SharedErrorCode.VERIFICATION_CODE_INVALID);
             }
             var code = verificationCode.get();
             if (code.isUsed()) {
@@ -223,7 +224,7 @@ public class VerificationCodeAppService {
             if (java.time.Instant.now().isAfter(code.getExpireAt())) {
                 throw new DomainException(VerificationCodeError.CODE_EXPIRED);
             }
-            throw new DomainException(VerificationCodeError.CODE_INVALID);
+            throw new DomainException(SharedErrorCode.VERIFICATION_CODE_INVALID);
         }
 
         return new VerifyCodeResult(true, "验证码正确");

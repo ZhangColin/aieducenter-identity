@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aieducenter.aieducenteridentity.shared.error.SharedErrorCode;
 import com.aieducenter.aieducenteridentity.verification.application.VerificationCodeAppService;
 import com.aieducenter.aieducenteridentity.verification.application.dto.CodeTarget;
 import com.aieducenter.aieducenteridentity.verification.application.dto.CodeVerificationView;
@@ -108,7 +109,7 @@ public class SignedVerificationController {
 
     private static boolean isCodeMismatch(DomainException ex) {
         String code = ex.getCodeMessage().code();
-        return VerificationCodeError.CODE_INVALID.code().equals(code)
+        return SharedErrorCode.VERIFICATION_CODE_INVALID.code().equals(code)
             || VerificationCodeError.CODE_EXPIRED.code().equals(code)
             || VerificationCodeError.CODE_ALREADY_USED.code().equals(code);
     }

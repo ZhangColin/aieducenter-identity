@@ -3,6 +3,7 @@ package com.aieducenter.aieducenteridentity.verification.domain.aggregate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
+import com.aieducenter.aieducenteridentity.shared.error.SharedErrorCode;
 import com.aieducenter.aieducenteridentity.verification.domain.enums.VerificationPurpose;
 import com.aieducenter.aieducenteridentity.verification.domain.enums.VerificationType;
 import com.aieducenter.aieducenteridentity.verification.domain.error.VerificationCodeError;
@@ -59,7 +60,7 @@ public class VerificationCode implements AggregateRoot<VerificationCode, String>
             VerificationPurpose purpose) {
 
         Assertions.require(code != null && code.matches(CODE_PATTERN),
-            VerificationCodeError.CODE_INVALID);
+            SharedErrorCode.VERIFICATION_CODE_INVALID);
 
         VerificationCode verificationCode = new VerificationCode();
         verificationCode.id = generateId(target, purpose);

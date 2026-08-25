@@ -21,10 +21,8 @@ public enum VerificationCodeError implements CodeMessage {
      */
     PHONE_INVALID("VERIFICATION_PHONE_INVALID", "手机号格式不正确", 400),
 
-    /**
-     * 验证码错误。
-     */
-    CODE_INVALID("VERIFICATION_CODE_INVALID", "验证码错误", 400),
+    // 注：验证码错误（VERIFICATION_CODE_INVALID）不在本枚举——它是跨上下文对外契约
+    // （sso 兜底/防枚举翻译 + 本上下文直抛透传），归 shared.error.SharedErrorCode 单点持有。
 
     /**
      * 验证码已过期。

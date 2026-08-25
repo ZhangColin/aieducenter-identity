@@ -10,7 +10,7 @@ import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
-import com.aieducenter.aieducenteridentity.sso.domain.error.SsoAuthError;
+import com.aieducenter.aieducenteridentity.shared.error.SharedErrorCode;
 import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
 import com.cartisan.core.exception.ApplicationException;
 import com.cartisan.core.exception.DomainException;
@@ -26,7 +26,7 @@ import com.cartisan.core.exception.DomainException;
  * <h3>防用户枚举</h3>
  * <p>「账号不存在」与「验证码错误」同一响应：错码由 verification 抛 {@code DomainException}（经 ACL port 透传，
  * sso 不引其错误码类）；验码通过但账号不存在时，{@code authenticateByIdentifier} 抛
- * {@code ApplicationException(ACCOUNT_NOT_FOUND)}，本服务翻译为同一 {@link SsoAuthError#CODE_INVALID}
+ * {@code ApplicationException(ACCOUNT_NOT_FOUND)}，本服务翻译为同一 {@link SharedErrorCode#VERIFICATION_CODE_INVALID}
  * （同一 code+message+status，不暴露账号存在性）。停用/锁定是 {@code DomainException}（身份已证明后才告知，
  * 不构成枚举），原样向上抛。</p>
  *
@@ -73,14 +73,14 @@ public class SsoLoginCodeAppService {
             verificationCodePort.verifyPhoneCode(account, command.code(), LOGIN_PURPOSE);
         }
 
-        // 防枚举：验码通过但账号不存在 → 与错码同一 CODE_INVALID（sso 自有码，见 SsoAuthError）。
+        // 防枚举：验码通过但账号不存在 → 与错码同一 VERIFICATION_CODE_INVALID（shared 契约码，见 SharedErrorCode）。
         // authenticateByIdentifier 仅在账号定位不到时抛 ApplicationException(ACCOUNT_NOT_FOUND)；
         // 停用/锁定是 DomainException，不在此处处理——原样向上抛（身份已证明，不构成枚举）。
         SubjectView subject;
         try {
             subject = accountAuth.authenticateByIdentifier(account);
         } catch (ApplicationException e) {
-            throw new DomainException(SsoAuthError.CODE_INVALID);
+            throw new DomainException(SharedErrorCode.VERIFICATION_CODE_INVALID);
         }
 
         return loginCompletion.completeLogin(subject, client, command.redirectUri(),

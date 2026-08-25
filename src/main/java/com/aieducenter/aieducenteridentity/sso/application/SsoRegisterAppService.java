@@ -11,7 +11,7 @@ import com.aieducenter.aieducenteridentity.sso.application.dto.SsoLoginResult;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClient;
 import com.aieducenter.aieducenteridentity.sso.domain.client.SsoClientValidationService;
 import com.aieducenter.aieducenteridentity.sso.domain.error.OidcException;
-import com.aieducenter.aieducenteridentity.sso.domain.error.SsoAuthError;
+import com.aieducenter.aieducenteridentity.shared.error.SharedErrorCode;
 import com.aieducenter.aieducenteridentity.sso.infrastructure.verification.VerificationCodePort;
 import com.cartisan.core.exception.DomainException;
 
@@ -90,7 +90,7 @@ public class SsoRegisterAppService {
     /** 验证码必填兜底：空白等同错码（CODE_INVALID），不进 Redis 查询。 */
     private static String requireCode(String code) {
         if (code == null || code.isBlank()) {
-            throw new DomainException(SsoAuthError.CODE_INVALID);
+            throw new DomainException(SharedErrorCode.VERIFICATION_CODE_INVALID);
         }
         return code.trim();
     }

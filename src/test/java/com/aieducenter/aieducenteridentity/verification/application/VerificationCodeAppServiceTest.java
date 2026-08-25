@@ -10,6 +10,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.aieducenter.aieducenteridentity.shared.error.SharedErrorCode;
 import com.aieducenter.aieducenteridentity.verification.application.dto.SendEmailCodeCommand;
 import com.aieducenter.aieducenteridentity.verification.application.dto.SendSmsCodeCommand;
 import com.aieducenter.aieducenteridentity.verification.application.dto.SendCodeResponse;
@@ -151,7 +152,7 @@ class VerificationCodeAppServiceTest {
         // When & Then
         assertThatThrownBy(() -> service.verifyCode(command))
             .isInstanceOf(DomainException.class)
-            .hasMessageContaining(VerificationCodeError.CODE_INVALID.message());
+            .hasMessageContaining(SharedErrorCode.VERIFICATION_CODE_INVALID.message());
     }
 
     @Test
@@ -297,6 +298,6 @@ class VerificationCodeAppServiceTest {
         // When & Then
         assertThatThrownBy(() -> service.verifyPhoneCode(command))
             .isInstanceOf(DomainException.class)
-            .hasMessageContaining(VerificationCodeError.CODE_INVALID.message());
+            .hasMessageContaining(SharedErrorCode.VERIFICATION_CODE_INVALID.message());
     }
 }
