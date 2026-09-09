@@ -33,6 +33,12 @@ identity:
     jwt:
       # 本机 issuer 真值（#74）：与 demo 消费方所配逐字符一致——discovery 各端点 / iss / 验签 exactMatch 全从它推导
       issuer: http://identity.localhost:10001
+      # 本地联调补丁：aiplatform BFF 按 OIDC core 校验 id_token aud 含 client_id，
+      # 而「/token 按 client_id 覆盖 aud」是 identity Phase 2 未落项（见 JwtTokenProperties javadoc）。
+      # 落地前把消费方 client_id 追加进 audiences 兜底；列表整体替换语义，保留原值。
+      audiences:
+        - aieducenter-identity
+        - IHvjUEC-ratYeIBRLPEDvEGcueVIDCNB0L9O7vKS06o
   sso:
     # local 跑 http://*.localhost：Safari/Firefox 不豁免 Secure-over-http（仅 Chrome/Edge 豁免），
     # Secure cookie 会被拒存 → sso_session 落不了地、SSO 会话不持久（issue #36）。故 local 关 Secure；
