@@ -7,11 +7,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,7 +32,7 @@ import com.cartisan.test.base.ApiTestAssertions;
 /**
  * 后台管理 gate + 管理端点集成测试（{@code GET /api/account/{userId}/management}（#67）/
  * {@code POST /api/account/{userId}/disable}（#68）/ {@code activate}·{@code unlock}·{@code sessions/revoke}（#69）/
- * {@code GET /api/account} 用户搜索（#70，首次启用 Specification/Pageable））。
+ * {@code GET /api/account} 用户搜索（#70 起，分页 #78 起走框架 Pagination 契约，全链 1-based））。
  *
  * <p>一条缝贯穿 签名 filter → {@code SignatureVerificationInterceptor}（401 认证）→
  * {@code ManagementCallerInterceptor}（403 白名单）→ controller → {@code AccountManagementAppService}
@@ -366,7 +368,7 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
         assertThat(operationLogRepository.findAll()).isEmpty();
     }
 
-    // ========== #70：GET /api/account（用户搜索，分页多条件，首次启用 Specification/Pageable）==========
+    // ========== #70：GET /api/account（用户搜索，分页多条件；#78 起 1-based Pagination）==========
 
     @Test
     void given_email_filter_when_search_then_returns_only_matching_accounts_with_paged_shape() throws Exception {
@@ -379,8 +381,8 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.total").value(2))
             .andExpect(jsonPath("$.data.items.length()").value(2))
-            .andExpect(jsonPath("$.data.page").value(1)) // 0-based page=0 → 1-based
-            .andExpect(jsonPath("$.data.size").value(20)) // @PageableDefault 默认 size
+            .andExpect(jsonPath("$.data.page").value(1)) // 未传 page → 框架默认 1（1-based，#78）
+            .andExpect(jsonPath("$.data.size").value(20)) // 未传 size → 框架默认 20
             .andExpect(jsonPath("$.data.items[*].email",
                 containsInAnyOrder("alpha-search@example.com", "beta-search@example.com")));
 
@@ -480,22 +482,46 @@ class ManagementEndpointIntegrationTest extends IdentityIntegrationTestBase {
         createEmailAccount("page-2@example.com", PASSWORD);
         createEmailAccount("page-3@example.com", PASSWORD);
 
-        // 共 3 个，size=2：第一页 2 项 / total=3 / page=1（1-based）
+        // 共 3 个，size=2：wire page=1（1-based，#78 起）取第一页 2 项 / total=3 / 回显 page=1
         mvc.perform(signedGetParams("/api/account",
-                Map.of("email", "page", "page", "0", "size", "2"), adminConsoleSigner))
+                Map.of("email", "page", "page", "1", "size", "2"), adminConsoleSigner))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.total").value(3))
             .andExpect(jsonPath("$.data.items.length()").value(2))
             .andExpect(jsonPath("$.data.page").value(1))
             .andExpect(jsonPath("$.data.size").value(2));
 
-        // 第二页 1 项 / total=3 / page=2
+        // wire page=2 取第二页 1 项 / total=3 / 回显 page=2
         mvc.perform(signedGetParams("/api/account",
-                Map.of("email", "page", "page", "1", "size", "2"), adminConsoleSigner))
+                Map.of("email", "page", "page", "2", "size", "2"), adminConsoleSigner))
             .andExpect(ApiTestAssertions.assertOk())
             .andExpect(jsonPath("$.data.total").value(3))
             .andExpect(jsonPath("$.data.items.length()").value(1))
             .andExpect(jsonPath("$.data.page").value(2));
+
+        // 框架 clamp（#78）：wire page=0（旧 0-based 调用方的"第一页"）静默贴边为 page=1 → 回第一页、回显 1
+        mvc.perform(signedGetParams("/api/account",
+                Map.of("email", "page", "page", "0", "size", "2"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.items.length()").value(2))
+            .andExpect(jsonPath("$.data.page").value(1));
+    }
+
+    @Test
+    void given_no_sort_param_when_search_then_defaults_to_created_at_desc() throws Exception {
+        // 默认排序契约（admin BFF 不传 sort）：createdAt 降序（最新注册在前）。
+        // createdAt 由审计填充、连续创建可能同毫秒，故显式把先建的账号拨早一天，消除时序巧合。
+        Long olderId = createEmailAccount("sort-older@example.com", PASSWORD);
+        Long newerId = createEmailAccount("sort-newer@example.com", PASSWORD);
+        Account older = accountRepository.findById(olderId).orElseThrow();
+        ReflectionTestUtils.setField(older, "createdAt", LocalDateTime.now().minusDays(1));
+        accountRepository.save(older);
+
+        mvc.perform(signedGetParams("/api/account", Map.of("email", "sort-"), adminConsoleSigner))
+            .andExpect(ApiTestAssertions.assertOk())
+            .andExpect(jsonPath("$.data.total").value(2))
+            .andExpect(jsonPath("$.data.items[0].userId").value(newerId))
+            .andExpect(jsonPath("$.data.items[1].userId").value(olderId));
     }
 
     @Test

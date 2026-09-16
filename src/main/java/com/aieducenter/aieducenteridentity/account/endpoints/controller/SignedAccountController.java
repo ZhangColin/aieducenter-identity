@@ -1,8 +1,5 @@
 package com.aieducenter.aieducenteridentity.account.endpoints.controller;
 
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +31,7 @@ import com.aieducenter.aieducenteridentity.account.application.dto.response.Subj
 import com.aieducenter.aieducenteridentity.account.endpoints.web.RequireManagementCaller;
 import com.cartisan.openapi.annotation.RequireSignature;
 import com.cartisan.web.doc.ErrorCodes;
+import com.cartisan.web.request.Pagination;
 import com.cartisan.web.response.ApiResponse;
 import com.cartisan.web.response.PageResponse;
 
@@ -72,7 +70,7 @@ import jakarta.validation.Valid;
  * #67 起后台管理（admin-console）端点加 {@code @RequireManagementCaller} 白名单 gate：#67 管理详情读、
  * #68 封号（{@code POST {userId}/disable}，reason 必填）、#69 解封 / 解锁 / 独立踢人（{@code activate} /
  * {@code unlock} / {@code sessions/revoke}，reason 可选）；#70 用户搜索（{@code GET /api/account}，分页多条件，
- * 首次启用 Specification/Pageable，只读不审计）。</p>
+ * 首次启用 Specification 分页查询，只读不审计；#78 起分页走框架 {@link Pagination} 契约，全链 1-based）。</p>
  *
  * @since 0.1.0
  */
@@ -282,15 +280,16 @@ public class SignedAccountController {
     @Operation(summary = "用户搜索（分页多条件）",
         description = "admin-console 签名调用方按 email/phone/userId/status/locked/注册时间区间 分页搜索账号，"
             + "返回分页管理视图（items/total/page/size，每项同管理详情口径 AccountManagementView）。"
-            + "首次启用 BaseRepository 的 JpaSpecificationExecutor + findAll(Pageable)——@Condition 多条件 AND 组合，"
+            + "首次启用 BaseRepository 的 JpaSpecificationExecutor + findAll——@Condition 多条件 AND 组合，"
             + "不传即不过滤。只读、不审计。无结果 / 分页越界 → 空页（200，不报错）。"
-            + "page 0-based / size（默认 createdAt 降序，size 默认 20）。"
+            + "分页走框架 Pagination 契约（#78 起全链 1-based）：page 默认 1、size 默认 20（上限 100，越界静默贴边），"
+            + "sort 多值 token（如 sort=createdAt,desc）；不传 sort 默认 createdAt 降序。"
             + "@RequireManagementCaller 白名单 gate：非白名单签名 → 403；未签名 → 401（签名 gate）。"
             + "无业务错误码（空页不报错；仅基建错可中断）。")
     @ErrorCodes("INTERNAL_SERVER_ERROR")
     public ApiResponse<PageResponse<AccountManagementView>> search(
             AccountSearchQuery query,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ApiResponse.ok(managementAppService.search(query, pageable));
+            Pagination pagination) {
+        return ApiResponse.ok(managementAppService.search(query, pagination));
     }
 }
