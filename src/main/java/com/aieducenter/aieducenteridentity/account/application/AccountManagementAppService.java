@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -52,7 +51,7 @@ import com.cartisan.web.response.PageResponse;
  * </ul>
  *
  * <h3>用户搜索（#70）</h3>
- * <p>首次启用 {@code BaseRepository} 自带的 {@code JpaSpecificationExecutor} + {@code findAll(Specification, PageRequest)}：
+ * <p>首次启用 {@code BaseRepository} 自带的 {@code JpaSpecificationExecutor} + {@code findAll(Specification, Pageable)}：
  * 由 {@link ConditionSpecifications#fromAnnotation(AccountSearchQuery)} 把 {@link AccountSearchQuery}
  * 的 {@code @Condition} 字段拼成 AND 组合 Specification，再分页查（分页请求为框架 {@link Pagination}，#78 起）。软删除自动过滤（Hibernate restriction
  * contributor，Specification 查询亦生效）。结果投影成 {@link AccountManagementView}（与单账号管理详情同口径），
@@ -63,7 +62,8 @@ import com.cartisan.web.response.PageResponse;
 @Service
 public class AccountManagementAppService {
 
-    /** 搜索默认排序（不传 sort 时）：createdAt 降序——分页无 ORDER BY 窗口不稳定，admin BFF 不传 sort 依赖此默认。 */
+    /** 搜索默认排序（不传 sort 时）：createdAt 降序——经框架 {@code toPageRequest(Sort)} 出口声明（cartisan-boot#31），
+     * 分页无 ORDER BY 窗口不稳定，admin BFF 不传 sort 依赖此默认。 */
     private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.DESC, "createdAt");
 
     private final AccountRepository accountRepository;
@@ -111,7 +111,8 @@ public class AccountManagementAppService {
      *
      * <p>分页走框架 {@link Pagination} 契约（#78 起全链 1-based）：wire page/size/sort 由框架绑定 +
      * clamp（page≥1、size∈[1,100] 默认 20），本方法零页码算术；<b>不传 sort 时默认 createdAt 降序</b>
-     *（本端点既定契约——分页无 ORDER BY 窗口不稳定，且 admin BFF 不传 sort 依赖此默认）。
+     *（{@code toPageRequest(Sort)} 端点默认排序出口声明，cartisan-boot#31；分页无 ORDER BY 窗口不稳定，
+     * 且 admin BFF 不传 sort 依赖此默认，wire 传了排序以 wire 为准）。
      * 回显经 {@link PageResponse#of(Page)} 集中做 1-based（替代原手写 {@code +1}）。</p>
      *
      * <p>结果投影成 {@link AccountManagementView}（与 {@link #managementDetail} 同口径）；profile 按本页 userId
@@ -126,11 +127,7 @@ public class AccountManagementAppService {
     @Transactional(readOnly = true)
     public PageResponse<AccountManagementView> search(AccountSearchQuery query, Pagination pagination) {
         Specification<Account> spec = ConditionSpecifications.fromAnnotation(query);
-        PageRequest pageRequest = pagination.toPageRequest();
-        if (pageRequest.getSort().isUnsorted()) {
-            pageRequest = PageRequest.of(pageRequest.getPageNumber(), pageRequest.getPageSize(), DEFAULT_SORT);
-        }
-        Page<Account> page = accountRepository.findAll(spec, pageRequest);
+        Page<Account> page = accountRepository.findAll(spec, pagination.toPageRequest(DEFAULT_SORT));
 
         // profile 按本页 userId 批量预取（避免逐项查库的 N+1）；page.map 内是纯内存 Map 取值投影
         List<Long> userIds = page.getContent().stream().map(Account::getId).toList();
